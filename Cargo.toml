@@ -1,0 +1,17 @@
+[workspace]
+members = [
+    "supershuckie-replay-recorder"
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+
+[workspace.dependencies]
+num_enum = "0.7.5"
+tinyvec = { version = "1.10.0", features = ["alloc"], default-features = false }
+spin = "0.10.0"
+zstd-sys = { version = "2.0.16", default-features = false }
+blake3 = "1.8.2"

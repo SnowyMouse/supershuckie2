@@ -1,0 +1,206 @@
+use super::{ReplayFileWriteError, ReplayFileRecorder, ReplayFileSink};
+use crate::{ByteVec, InputBuffer, Speed, UnsignedInteger};
+use alloc::borrow::ToOwned;
+use alloc::string::String;
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Mutex;
+use std::sync::{Arc, Weak};
+
+type RecorderMutex<Final, Temp> = Mutex<ReplayFileRecorder<Final, Temp>>;
+
+/// File recorder that records in a separate thread and is non-blocking.
+///
+/// The `std` feature is required to use this.
+pub struct NonBlockingReplayFileRecorder<Final: ReplayFileSink + Send + Sync + 'static, Temp: ReplayFileSink + Send + Sync + 'static> {
+    recorder: Arc<RecorderMutex<Final, Temp>>,
+
+    sender: Sender<ThreadedReplayFileRecorderCommand>,
+    receiver: Receiver<ThreadedReplayFileRecorderResponse>
+}
+
+impl<Final: ReplayFileSink + Send + Sync + 'static, Temp: ReplayFileSink + Send + Sync + 'static> NonBlockingReplayFileRecorder<Final, Temp> {
+    /// Instantiate a non-blocking replay recorder.
+    pub fn new(recorder: ReplayFileRecorder<Final, Temp>) -> NonBlockingReplayFileRecorder<Final, Temp> {
+        let recorder = Arc::new(Mutex::new(recorder));
+
+        let (sender_main, receiver_helper) = channel();
+        let (sender_helper, receiver_main) = channel();
+
+        let helper = ThreadedReplayFileRecorderThread {
+            recorder: Arc::downgrade(&recorder),
+            sender: sender_helper,
+            receiver: receiver_helper
+        };
+
+        std::thread::Builder::new()
+            .name("ThreadedReplayFileRecorderThread".to_owned())
+            .spawn(move || {
+                helper.run();
+            })
+            .expect("failed to start a thread...");
+
+        Self {
+            sender: sender_main,
+            receiver: receiver_main,
+            recorder
+        }
+    }
+
+    /// Close the replay file recorder.
+    pub fn close(mut self) -> Result<(Final, Temp), (Final, Temp, ReplayFileWriteError)> {
+        // Close it
+        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::Close);
+
+        // Sever the connection
+        self.sender = channel().0;
+
+        // If the other thread is busy, we'll need to spin here until it's done.
+        let mut a = self.recorder;
+        let recorder = loop {
+            match Arc::try_unwrap(a) {
+                Ok(n) => break n,
+                Err(e) => a = e
+            }
+        };
+
+        // This should work unless the thread panicked.
+        let recorder = recorder.into_inner().expect("failed to get the inner value");
+
+        // Done.
+        recorder.close()
+    }
+
+    /// Advance a new frame.
+    pub fn next_frame(&mut self) {
+        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::NextFrame);
+    }
+
+    /// Add a bookmark.
+    pub fn add_bookmark<S: Into<String>>(&mut self, name: S) {
+        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::AddBookmark { bookmark: name.into() });
+    }
+
+    /// Add a new keyframe.
+    pub fn insert_keyframe(&mut self, state: ByteVec, emulator_ticks_over_256: UnsignedInteger) {
+        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::NewKeyframe { state, emulator_ticks_over_256 });
+    }
+
+    /// Set the current input.
+    pub fn set_input(&mut self, input: InputBuffer) {
+        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::SetInput { input });
+    }
+
+    /// Hard-reset the console.
+    pub fn reset_console(&mut self) {
+        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::ResetConsole);
+    }
+
+    /// Write RAM to an address.
+    pub fn write_memory(&mut self, address: UnsignedInteger, data: ByteVec) {
+        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::WriteMemory { address, data });
+    }
+
+    /// Set the current speed.
+    pub fn set_speed(&mut self, speed: Speed) {
+        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::SetSpeed { speed });
+    }
+
+    /// Load the keyframe at the given frame index.
+    pub fn restore_state(&mut self, keyframe_frame_index: u64) {
+        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::RestoreState { keyframe_frame_index });
+    }
+
+    /// Check for errors, if any.
+    pub fn poll_errors(&mut self) -> Option<ReplayFileWriteError> {
+        self.receiver.recv().ok().map(|i| match i {
+            ThreadedReplayFileRecorderResponse::Error { error } => error,
+            ThreadedReplayFileRecorderResponse::Closed => ReplayFileWriteError::StreamClosed
+        })
+    }
+}
+
+struct ThreadedReplayFileRecorderThread<Final: ReplayFileSink, Temp: ReplayFileSink> {
+    recorder: Weak<RecorderMutex<Final, Temp>>,
+
+    // note: the success of sending will never be checked; we do not care because this thread will
+    // eventually be closed if it fails
+    sender: Sender<ThreadedReplayFileRecorderResponse>,
+    receiver: Receiver<ThreadedReplayFileRecorderCommand>,
+}
+
+impl<Final: ReplayFileSink, Temp: ReplayFileSink> ThreadedReplayFileRecorderThread<Final, Temp> {
+    fn run(mut self) {
+        loop {
+            // If any of these fails, abort the thread.
+            let Ok(command) = self.receiver.recv() else {
+                break
+            };
+            if matches!(command, ThreadedReplayFileRecorderCommand::Close) {
+                break
+            }
+            let Some(recorder) = self.recorder.upgrade() else {
+                break
+            };
+            let Ok(mut recorder) = recorder.lock() else {
+                break
+            };
+
+            if let Err(e) = self.handle_command(command, &mut recorder) {
+                let _ = self.sender.send(ThreadedReplayFileRecorderResponse::Error { error: e });
+            }
+        }
+
+        let _ = self.sender.send(ThreadedReplayFileRecorderResponse::Closed);
+    }
+
+    fn handle_command(&mut self, command: ThreadedReplayFileRecorderCommand, recorder: &mut ReplayFileRecorder<Final, Temp>) -> Result<(), ReplayFileWriteError> {
+        match command {
+            ThreadedReplayFileRecorderCommand::Close => Ok(()),
+            ThreadedReplayFileRecorderCommand::WriteMemory { address, data } => {
+                recorder.write_memory(address, data)
+            },
+            ThreadedReplayFileRecorderCommand::NewKeyframe { emulator_ticks_over_256, state } => {
+                let _ = recorder.insert_keyframe(state, emulator_ticks_over_256)?;
+                Ok(())
+            },
+            ThreadedReplayFileRecorderCommand::SetInput { input } => {
+                recorder.set_input(input)
+            },
+            ThreadedReplayFileRecorderCommand::SetSpeed { speed } => {
+                recorder.set_speed(speed)
+            },
+            ThreadedReplayFileRecorderCommand::AddBookmark { bookmark } => {
+                recorder.add_bookmark(bookmark)
+            },
+            ThreadedReplayFileRecorderCommand::ResetConsole => {
+                recorder.reset_console()
+            },
+            ThreadedReplayFileRecorderCommand::NextFrame => {
+                recorder.next_frame();
+                Ok(())
+            },
+            ThreadedReplayFileRecorderCommand::RestoreState { keyframe_frame_index } => {
+                recorder.restore_state(keyframe_frame_index)
+            }
+        }
+    }
+}
+
+enum ThreadedReplayFileRecorderCommand {
+    NextFrame,
+    AddBookmark { bookmark: String },
+    NewKeyframe { state: ByteVec, emulator_ticks_over_256: UnsignedInteger },
+    SetInput { input: InputBuffer },
+    SetSpeed { speed: Speed },
+    WriteMemory { address: UnsignedInteger, data: ByteVec },
+    RestoreState { keyframe_frame_index: UnsignedInteger },
+    ResetConsole,
+    Close
+}
+
+enum ThreadedReplayFileRecorderResponse<> {
+    Error { error: ReplayFileWriteError },
+    Closed
+}
+
+// TODO: write unit tests
