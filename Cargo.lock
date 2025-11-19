@@ -202,6 +202,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "sdl3-main"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "017601f275a2c84acff117f3691e19ddfa0e74bf6b07ce98a4ff842acbef8bb0"
+dependencies = [
+ "sdl3-main-macros",
+ "sdl3-sys",
+]
+
+[[package]]
+name = "sdl3-main-macros"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae58599dd01dd58b4cafa3a52d3a80cd2fb3599764defb5ee534de8f340f2010"
+
+[[package]]
+name = "sdl3-sys"
+version = "0.5.10+SDL3-3.2.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c531aa18059783450bcddc82a6effc48df5f173bb46142eb421ff2cfccf53984"
+
+[[package]]
 name = "serde_core"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -234,6 +256,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
 dependencies = [
  "lock_api",
+]
+
+[[package]]
+name = "supershuckie"
+version = "0.1.0"
+dependencies = [
+ "sdl3-main",
+ "sdl3-sys",
 ]
 
 [[package]]
