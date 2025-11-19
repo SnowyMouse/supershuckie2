@@ -1,0 +1,12 @@
+[package]
+name = "supershuckie"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sdl3-sys = { workspace = true }
+sdl3-main = { workspace = true }
+vulkano = { workspace = true }
+
+[build-dependencies]

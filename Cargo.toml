@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "supershuckie",
     "supershuckie-core",
     "supershuckie-pokeabyte-integration",
     "supershuckie-replay-recorder"
@@ -24,3 +25,6 @@ blake3 = "1.8.2"
 cc = "1.2.46"
 byteorder = "1.5.0"
 safeboy = "0.3.0-beta.2"
+sdl3-sys = "0.5.10"
+sdl3-main = "0.5.4"
+vulkano = "0.35.2"
