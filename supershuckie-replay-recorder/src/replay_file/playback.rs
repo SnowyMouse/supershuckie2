@@ -2,6 +2,22 @@
 //!
 //! See [`ReplayFilePlayer`].
 
+#[cfg(not(feature = "std"))]
+use spin::Mutex;
+
+#[cfg(not(feature = "std"))]
+macro_rules! unwrap_mutex_lock {
+    ($e:expr) => {$e};
+}
+
+#[cfg(feature = "std")]
+use std::sync::Mutex;
+
+#[cfg(feature = "std")]
+macro_rules! unwrap_mutex_lock {
+    ($e:expr) => {$e.unwrap()};
+}
+
 use alloc::borrow::Cow;
 use alloc::format;
 use alloc::vec::Vec;
@@ -11,7 +27,6 @@ use core::mem::transmute;
 use alloc::sync::Arc;
 use alloc::collections::BTreeMap;
 use alloc::vec;
-use spin::Mutex;
 use crate::replay_file::{ReplayFileMetadata, ReplayHeaderBytes, ReplayHeaderRaw};
 use crate::{BookmarkMetadata, KeyframeMetadata, Packet, PacketIO, PacketReadError, UnsignedInteger};
 use crate::util::{decompress_data, launder_reference};
@@ -306,7 +321,7 @@ impl ReplayFilePlayer {
                     break;
                 };
 
-                let status = working_blob_ref.lock();
+                let status = unwrap_mutex_lock!(working_blob_ref.lock());
                 match &*status {
                     PacketDecompressionStatus::InProgress => {
                         continue;
@@ -440,7 +455,7 @@ impl ReplayFilePlayer {
                                 return
                             };
 
-                            let mut r = r.lock();
+                            let mut r = unwrap_mutex_lock!(r.lock());
 
                             match decompressed {
                                 Ok(n) => {
@@ -462,8 +477,20 @@ impl ReplayFilePlayer {
                     }
                 };
 
-                if let Some(f) = status.try_lock() {
-                    match &*f {
+                let lock;
+
+                #[cfg(feature = "std")]
+                {
+                    lock = status.try_lock().ok();
+                }
+
+                #[cfg(not(feature = "std"))]
+                {
+                    lock = status.try_lock();
+                }
+
+                if let Some(f) = lock.as_ref() {
+                    match &**f {
                         PacketDecompressionStatus::InProgress => return,
                         PacketDecompressionStatus::Failed { .. } => return,
                         PacketDecompressionStatus::Decompressed { packets } => {
@@ -474,6 +501,8 @@ impl ReplayFilePlayer {
                 else {
                     return
                 }
+
+                drop(lock);
                 *q = None;
             }
         }

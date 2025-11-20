@@ -8,8 +8,13 @@ use alloc::string::String;
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use alloc::format;
-use spin::Lazy;
 use zstd_sys::ZSTD_defaultCLevel;
+
+#[cfg(not(feature = "std"))]
+use spin::Lazy as LazyLock;
+
+#[cfg(feature = "std")]
+use std::sync::LazyLock;
 
 #[cfg(feature = "std")]
 mod thread;
@@ -71,7 +76,7 @@ pub const DEFAULT_MINIMUM_UNCOMPRESSED_BYTES_PER_BLOB: usize = 512 * 1024 * 1024
 /// Default compression level
 ///
 /// This is generally going to be equal to `3`.
-pub static DEFAULT_ZSTD_COMPRESSION_LEVEL: Lazy<i32> = Lazy::new(|| unsafe { ZSTD_defaultCLevel() } as i32);
+pub static DEFAULT_ZSTD_COMPRESSION_LEVEL: LazyLock<i32> = LazyLock::new(|| unsafe { ZSTD_defaultCLevel() } as i32);
 
 impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp> {
     /// Start a new replay file.
