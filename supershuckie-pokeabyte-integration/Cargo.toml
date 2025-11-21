@@ -1,0 +1,13 @@
+[package]
+name = "supershuckie-pokeabyte-integration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+num_enum = { workspace = true }
+byteorder = { workspace = true }
+tinyvec = { workspace = true }
+
+[build-dependencies]
+cc = { workspace = true }
