@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "supershuckie-core",
     "supershuckie-pokeabyte-integration",
     "supershuckie-replay-recorder"
 ]
@@ -18,3 +19,4 @@ zstd-sys = { version = "2.0.16", default-features = false }
 blake3 = "1.8.2"
 cc = "1.2.46"
 byteorder = "1.5.0"
+safeboy = "0.3.0-beta.2"
