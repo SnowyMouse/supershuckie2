@@ -3,6 +3,7 @@ use core::cmp::Ordering;
 use alloc::vec::Vec;
 use alloc::borrow::{Cow, ToOwned};
 use alloc::string::String;
+use core::num::NonZeroU16;
 use num_enum::TryFromPrimitive;
 use tinyvec::{ArrayVec, TinyVec};
 use crate::InputBuffer;
@@ -496,7 +497,17 @@ impl<'a> PacketIO<'a> for Speed {
     }
 
     fn read_all(from: &mut &'a[u8]) -> Result<Self, PacketReadError> {
-        Ok(Self { speed_over_256: u16::read_all(from)? })
+        Ok(Self { speed_over_256: NonZeroU16::read_all(from)? })
+    }
+}
+
+impl<'a> PacketIO<'a> for NonZeroU16 {
+    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
+        static_packet_write_array_references(self.get().write_packet_instructions())
+    }
+
+    fn read_all(from: &mut &'a [u8]) -> Result<Self, PacketReadError> {
+        Self::new(u16::read_all(from)?).ok_or_else(|| PacketReadError::ParseFail { explanation: Cow::Borrowed("read a zero u16 when NonZeroU16 was expected") })
     }
 }
 

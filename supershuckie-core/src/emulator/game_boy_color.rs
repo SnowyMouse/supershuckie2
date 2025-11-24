@@ -10,6 +10,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use safeboy::rgb_encoder::encode_a8r8g8b8;
 use safeboy::{DirectAccessRegion, Gameboy, GameboyCallbacks, InputButton, Model, RunnableInstanceFunctions, RunningGameboy, TurboMode, VBlankType};
 
+/// Game Boy and Game Boy Color emulator.
+///
+/// Uses [SameBoy](https://sameboy.github.io) as the underlying core.
 pub struct GameBoyColor {
     core: Gameboy,
     turbo_mode: TurboMode,
@@ -21,7 +24,11 @@ struct GameBoyCallbackData {
     screen: UnsafeCell<ScreenData>
 }
 
+unsafe impl Send for GameBoyCallbackData {}
+unsafe impl Sync for GameBoyCallbackData {}
+
 impl GameBoyColor {
+    /// Instantiate a `GameBoyColor` emulator from the given ROM.
     pub fn new_from_rom(
         rom: &[u8],
         bios: &[u8],

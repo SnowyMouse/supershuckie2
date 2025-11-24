@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, RwLock, Weak};
 use std::time::Duration;
 use tinyvec::{ArrayVec, TinyVec};
 use crate::protocol::{Instruction, MetadataHeader, PokeAByteProtocolRequestPacket, PokeAByteProtocolRequestReadBlock, MAX_NUMBER_OF_READ_BLOCKS};
-use crate::shared_memory::{PokeAByteSharedMemory, POKE_A_BYTE_SHARED_MEMORY_LEN};
+use crate::shared_memory::PokeAByteSharedMemory;
 
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!("must be compiled for 64-bit");
@@ -26,7 +26,7 @@ pub struct PokeAByteIntegrationServer {
 
 pub struct PokeAByteSetup {
     pub blocks: ArrayVec<[PokeAByteProtocolRequestReadBlock; MAX_NUMBER_OF_READ_BLOCKS]>,
-    pub frame_skip: u32
+    pub frame_skip: Option<u32>
 }
 
 impl PokeAByteIntegrationServer {
@@ -90,13 +90,6 @@ impl PokeAByteIntegrationServer {
                     // unhandled for now
                 },
                 PokeAByteProtocolRequestPacket::Setup { blocks, frame_skip } => {
-                    for i in &blocks {
-                        if i.memory_map_file_address.wrapping_add(i.length) > POKE_A_BYTE_SHARED_MEMORY_LEN {
-                            let _ = promotion.socket.send_to(&MetadataHeader::new_response(Instruction::Close).into_bytes(), addr);
-                            continue;
-                        }
-                    }
-
                     let _ = promotion.socket.send_to(&MetadataHeader::new_response(Instruction::Setup).into_bytes(), addr);
                     *promotion.setup.write().expect("failed to write to blocks") = Some(Arc::new(PokeAByteSetup {
                         blocks, frame_skip

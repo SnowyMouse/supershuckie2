@@ -1,4 +1,4 @@
-use super::{ReplayFileWriteError, ReplayFileRecorder, ReplayFileSink};
+use super::{ReplayFileWriteError, ReplayFileRecorder, ReplayFileSink, ReplayFileRecorderFns};
 use crate::{ByteVec, InputBuffer, Speed, UnsignedInteger};
 use alloc::borrow::ToOwned;
 use alloc::string::String;
@@ -11,14 +11,14 @@ type RecorderMutex<Final, Temp> = Mutex<ReplayFileRecorder<Final, Temp>>;
 /// File recorder that records in a separate thread and is non-blocking.
 ///
 /// The `std` feature is required to use this.
-pub struct NonBlockingReplayFileRecorder<Final: ReplayFileSink + Send + Sync + 'static, Temp: ReplayFileSink + Send + Sync + 'static> {
-    recorder: Arc<RecorderMutex<Final, Temp>>,
+pub struct NonBlockingReplayFileRecorder<Final: ReplayFileSink + Send + 'static, Temp: ReplayFileSink + Send + 'static> {
+    recorder: Option<Arc<RecorderMutex<Final, Temp>>>,
 
     sender: Sender<ThreadedReplayFileRecorderCommand>,
     receiver: Receiver<ThreadedReplayFileRecorderResponse>
 }
 
-impl<Final: ReplayFileSink + Send + Sync + 'static, Temp: ReplayFileSink + Send + Sync + 'static> NonBlockingReplayFileRecorder<Final, Temp> {
+impl<Final: ReplayFileSink + Send + 'static, Temp: ReplayFileSink + Send + 'static> NonBlockingReplayFileRecorder<Final, Temp> {
     /// Instantiate a non-blocking replay recorder.
     pub fn new(recorder: ReplayFileRecorder<Final, Temp>) -> NonBlockingReplayFileRecorder<Final, Temp> {
         let recorder = Arc::new(Mutex::new(recorder));
@@ -42,12 +42,22 @@ impl<Final: ReplayFileSink + Send + Sync + 'static, Temp: ReplayFileSink + Send 
         Self {
             sender: sender_main,
             receiver: receiver_main,
-            recorder
+            recorder: Some(recorder)
         }
     }
 
+    /// Return `true` if the recorder was already closed.
+    #[inline]
+    pub fn is_closed(&self) -> bool {
+        self.recorder.is_none()
+    }
+
     /// Close the replay file recorder.
-    pub fn close(mut self) -> Result<(Final, Temp), (Final, Temp, ReplayFileWriteError)> {
+    ///
+    /// # Panics
+    ///
+    /// Panics if already closed.
+    pub fn close(&mut self) -> Result<(Final, Temp), (Final, Temp, ReplayFileWriteError)> {
         // Close it
         let _ = self.sender.send(ThreadedReplayFileRecorderCommand::Close);
 
@@ -55,7 +65,7 @@ impl<Final: ReplayFileSink + Send + Sync + 'static, Temp: ReplayFileSink + Send 
         self.sender = channel().0;
 
         // If the other thread is busy, we'll need to spin here until it's done.
-        let mut a = self.recorder;
+        let mut a = self.recorder.take().expect("recorder already closed");
         let recorder = loop {
             match Arc::try_unwrap(a) {
                 Ok(n) => break n,
@@ -64,7 +74,7 @@ impl<Final: ReplayFileSink + Send + Sync + 'static, Temp: ReplayFileSink + Send 
         };
 
         // This should work unless the thread panicked.
-        let recorder = recorder.into_inner().expect("failed to get the inner value");
+        let mut recorder = recorder.into_inner().expect("failed to get the inner value");
 
         // Done.
         recorder.close()
@@ -201,6 +211,66 @@ enum ThreadedReplayFileRecorderCommand {
 enum ThreadedReplayFileRecorderResponse<> {
     Error { error: ReplayFileWriteError },
     Closed
+}
+
+impl<Final: ReplayFileSink + Sync + Send + 'static, Temp: ReplayFileSink + Sync + Send + 'static> ReplayFileRecorderFns for NonBlockingReplayFileRecorder<Final, Temp> {
+    #[inline]
+    fn is_closed(&self) -> bool {
+        self.is_closed()
+    }
+
+    #[inline]
+    fn close(&mut self) -> Result<(), ReplayFileWriteError> {
+        self.close().map_err(|e| e.2)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn next_frame(&mut self) {
+        self.next_frame()
+    }
+
+    #[inline]
+    fn add_bookmark(&mut self, name: String) -> Result<(), ReplayFileWriteError> {
+        self.add_bookmark(name);
+        Ok(())
+    }
+
+    #[inline]
+    fn insert_keyframe(&mut self, state: ByteVec, elapsed_ticks_over_256: UnsignedInteger) -> Result<(), ReplayFileWriteError> {
+        self.insert_keyframe(state, elapsed_ticks_over_256);
+        Ok(())
+    }
+
+    #[inline]
+    fn set_input(&mut self, input_buffer: InputBuffer) -> Result<(), ReplayFileWriteError> {
+        self.set_input(input_buffer);
+        Ok(())
+    }
+
+    #[inline]
+    fn reset_console(&mut self) -> Result<(), ReplayFileWriteError> {
+        self.reset_console();
+        Ok(())
+    }
+
+    #[inline]
+    fn write_memory(&mut self, address: UnsignedInteger, data: ByteVec) -> Result<(), ReplayFileWriteError> {
+        self.write_memory(address, data);
+        Ok(())
+    }
+
+    #[inline]
+    fn set_speed(&mut self, speed: Speed) -> Result<(), ReplayFileWriteError> {
+        self.set_speed(speed);
+        Ok(())
+    }
+
+    #[inline]
+    fn restore_state(&mut self, keyframe_frame_index: u64) -> Result<(), ReplayFileWriteError> {
+        self.restore_state(keyframe_frame_index);
+        Ok(())
+    }
 }
 
 // TODO: write unit tests

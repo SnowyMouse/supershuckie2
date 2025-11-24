@@ -6,3 +6,11 @@ license.workspace = true
 
 [dependencies]
 safeboy = { workspace = true }
+supershuckie-replay-recorder = { workspace = true }
+supershuckie-pokeabyte-integration = { workspace = true, optional = true }
+tinyvec = { workspace = true }
+
+[features]
+default = ["std", "pokeabyte"]
+pokeabyte = ["supershuckie-pokeabyte-integration"]
+std = []

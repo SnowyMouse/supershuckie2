@@ -50,8 +50,9 @@ pub struct ReplayFileRecorder<Final: ReplayFileSink, Temp: ReplayFileSink> {
 
     current_speed: Speed,
     current_input: InputBuffer,
-    final_sink: Final,
-    temporary_sink: Temp,
+
+    final_sink: Option<Final>,
+    temporary_sink: Option<Temp>,
 
     poisoned: bool
 }
@@ -125,8 +126,8 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
             frames_since_last_non_frames_packet: 0,
             all_keyframes: Vec::new(),
             poisoned: false,
-            final_sink,
-            temporary_sink,
+            final_sink: Some(final_sink),
+            temporary_sink: Some(temporary_sink),
         };
 
         recorder.insert_keyframe(
@@ -137,12 +138,30 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
         Ok(recorder)
     }
 
+    /// Returns `true` if the stream was closed.
+    #[inline]
+    pub fn is_closed(&self) -> bool {
+        self.final_sink.is_none()
+    }
+
     /// Close the replay file recorder.
-    pub fn close(mut self) -> Result<(Final, Temp), (Final, Temp, ReplayFileWriteError)> {
+    ///
+    /// You can no longer write to this.
+    ///
+    /// # Panics
+    ///
+    /// Panics if already closed.
+    pub fn close(&mut self) -> Result<(Final, Temp), (Final, Temp, ReplayFileWriteError)> {
+        let (Some(final_sink), Some(temporary_sink)) = (self.final_sink.take(), self.temporary_sink.take()) else {
+            panic!("Already closed...")
+        };
+
         if let Err(e) = self.next_blob() {
-            return Err((self.final_sink, self.temporary_sink, e))
+            self.poisoned = true;
+            return Err((final_sink, temporary_sink, e))
         }
-        Ok((self.final_sink, self.temporary_sink))
+        self.poisoned = true;
+        Ok((final_sink, temporary_sink))
     }
 
     /// Returns true if an unrecoverable error occurred.
@@ -157,6 +176,7 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
 
     /// Add a bookmark.
     pub fn add_bookmark<S: Into<String>>(&mut self, name: S) -> Result<(), ReplayFileWriteError> {
+        self.assert_not_closed()?;
         let bookmark_data = BookmarkMetadata {
             name: name.into(),
             elapsed_frames: self.elapsed_frames
@@ -173,6 +193,7 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
     /// Returns the frame index the keyframe is on.
     pub fn insert_keyframe(&mut self, state: ByteVec, elapsed_ticks_over_256: UnsignedInteger) -> Result<u64, ReplayFileWriteError> {
         assert!(self.elapsed_ticks_over_256 <= elapsed_ticks_over_256);
+        self.assert_not_closed()?;
 
         self.elapsed_ticks_over_256 = elapsed_ticks_over_256;
         self.last_keyframe_frames = self.elapsed_frames;
@@ -222,12 +243,16 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
 
             let write_instructions = compressed_blob.write_packet_instructions();
 
-            let written = this.final_sink.write_packet_data(&write_instructions)?;
-            let written = u64::try_from(written).expect("failing to convert written packet data from usize to u64");
-            this.temporary_sink.truncate(this.current_blob_offset)?;
-            this.temporary_sink.write_packet_data(&write_instructions)?;
+            let current_blob_offset_old = this.current_blob_offset;
 
-            this.current_blob_offset = this.current_blob_offset.checked_add(written).expect("overflowed adding current_blob_offset");
+            let (final_sink, temporary_sink) = this.get_sinks();
+
+            let written = final_sink.write_packet_data(&write_instructions)?;
+            let written = u64::try_from(written).expect("failing to convert written packet data from usize to u64");
+            temporary_sink.truncate(current_blob_offset_old)?;
+            temporary_sink.write_packet_data(&write_instructions)?;
+
+            this.current_blob_offset = current_blob_offset_old.checked_add(written).expect("overflowed adding current_blob_offset");
 
             Ok(())
         })
@@ -277,9 +302,16 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
 
             let instructions = what.write_packet_instructions();
             this.current_blob.write_packet_data(&instructions)?;
-            this.temporary_sink.write_packet_data(&instructions)?;
+            this.temporary_sink.as_mut().expect("write_packet_data on None sink").write_packet_data(&instructions)?;
             Ok(())
         })
+    }
+
+    fn get_sinks(&mut self) -> (&mut Final, &mut Temp) {
+        let final_sink = self.final_sink.as_mut().expect("can't get final sink (already closed?)");
+        let temporary_sink = self.temporary_sink.as_mut().expect("can't get temp sink (already closed?)");
+
+        (final_sink, temporary_sink)
     }
 
     fn write_run_frame_packet(&mut self) -> Result<(), ReplayFileWriteError> {
@@ -291,6 +323,7 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
     }
 
     fn do_with_poison<T, F: FnOnce(&mut Self) -> Result<T, ReplayFileWriteError>>(&mut self, f: F) -> Result<T, ReplayFileWriteError> {
+        self.assert_not_closed()?;
         if self.poisoned {
             return Err(ReplayFileWriteError::Poisoned)
         }
@@ -298,6 +331,15 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
         let result = f(self)?;
         self.poisoned = false;
         Ok(result)
+    }
+
+    fn assert_not_closed(&self) -> Result<(), ReplayFileWriteError> {
+        if self.is_closed() {
+            Err(ReplayFileWriteError::StreamClosed)
+        }
+        else {
+            Ok(())
+        }
     }
 }
 
@@ -416,5 +458,78 @@ impl ReplayFileSink for NullReplayFileSink {
         Ok(len)
     }
 }
+
+/// Object-safe wrapper for [`ReplayFileRecorder`]
+///
+/// See its documentation for what these functions do.
+#[expect(missing_docs)]
+pub trait ReplayFileRecorderFns: core::any::Any + 'static + Send {
+    fn is_closed(&self) -> bool;
+    fn close(&mut self) -> Result<(), ReplayFileWriteError>;
+    fn next_frame(&mut self);
+    fn add_bookmark(&mut self, name: String) -> Result<(), ReplayFileWriteError>;
+    fn insert_keyframe(&mut self, state: ByteVec, elapsed_ticks_over_256: UnsignedInteger) -> Result<(), ReplayFileWriteError>;
+    fn set_input(&mut self, input_buffer: InputBuffer) -> Result<(), ReplayFileWriteError>;
+    fn reset_console(&mut self) -> Result<(), ReplayFileWriteError>;
+    fn write_memory(&mut self, address: UnsignedInteger, data: ByteVec) -> Result<(), ReplayFileWriteError>;
+    fn set_speed(&mut self, speed: Speed) -> Result<(), ReplayFileWriteError>;
+    fn restore_state(&mut self, keyframe_frame_index: u64) -> Result<(), ReplayFileWriteError>;
+}
+
+impl<Final: ReplayFileSink + 'static + Send, Temp: ReplayFileSink + 'static + Send> ReplayFileRecorderFns for ReplayFileRecorder<Final, Temp> {
+    #[inline]
+    fn is_closed(&self) -> bool {
+        self.is_closed()
+    }
+
+    #[inline]
+    fn close(&mut self) -> Result<(), ReplayFileWriteError> {
+        self.close().map_err(|e| e.2)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn next_frame(&mut self) {
+        self.next_frame()
+    }
+
+    #[inline]
+    fn add_bookmark(&mut self, name: String) -> Result<(), ReplayFileWriteError> {
+        self.add_bookmark(name)
+    }
+
+    #[inline]
+    fn insert_keyframe(&mut self, state: ByteVec, elapsed_ticks_over_256: UnsignedInteger) -> Result<(), ReplayFileWriteError> {
+        self.insert_keyframe(state, elapsed_ticks_over_256)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn set_input(&mut self, input_buffer: InputBuffer) -> Result<(), ReplayFileWriteError> {
+        self.set_input(input_buffer)
+    }
+
+    #[inline]
+    fn reset_console(&mut self) -> Result<(), ReplayFileWriteError> {
+        self.reset_console()
+    }
+
+    #[inline]
+    fn write_memory(&mut self, address: UnsignedInteger, data: ByteVec) -> Result<(), ReplayFileWriteError> {
+        self.write_memory(address, data)
+    }
+
+    #[inline]
+    fn set_speed(&mut self, speed: Speed) -> Result<(), ReplayFileWriteError> {
+        self.set_speed(speed)
+    }
+
+    #[inline]
+    fn restore_state(&mut self, keyframe_frame_index: u64) -> Result<(), ReplayFileWriteError> {
+        self.restore_state(keyframe_frame_index)
+    }
+}
+
+fn _ensure_replay_file_recorder_fns_is_dyn_compatible(_fns: &dyn ReplayFileRecorderFns) {}
 
 // TODO: WRITE UNIT TESTS

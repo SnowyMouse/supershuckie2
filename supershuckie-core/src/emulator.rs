@@ -1,3 +1,5 @@
+//! Functionality for emulator cores.
+
 mod game_boy_color;
 
 use alloc::string::String;
@@ -6,7 +8,7 @@ pub use game_boy_color::*;
 use alloc::vec::Vec;
 
 /// Emulator core functionality.
-pub trait EmulatorCore {
+pub trait EmulatorCore: Send + 'static {
     /// Run the smallest amount of time.
     fn run(&mut self) -> RunTime;
 
@@ -68,7 +70,7 @@ pub struct RunTime {
 }
 
 /// Describes a current input state.
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Default)]
 #[allow(missing_docs)]
 pub struct Input {
     pub a: bool,
@@ -87,6 +89,82 @@ pub struct Input {
     pub y: bool,
 
     pub touch: Option<(u16, u16)>
+}
+
+impl core::ops::BitOr<Input> for Input {
+    type Output = Input;
+    fn bitor(self, rhs: Input) -> Self::Output {
+        Input {
+            a: self.a | rhs.a,
+            b: self.b | rhs.b,
+            start: self.start | rhs.start,
+            select: self.select | rhs.select,
+            d_up: self.d_up | rhs.d_up,
+            d_down: self.d_down | rhs.d_down,
+            d_left: self.d_left | rhs.d_left,
+            d_right: self.d_right | rhs.d_right,
+            l: self.l | rhs.l,
+            r: self.r | rhs.r,
+            x: self.x | rhs.x,
+            y: self.y | rhs.y,
+            touch: self.touch.or(rhs.touch),
+        }
+    }
+}
+
+impl core::ops::BitAnd<Input> for Input {
+    type Output = Input;
+    fn bitand(self, rhs: Input) -> Self::Output {
+        Input {
+            a: self.a & rhs.a,
+            b: self.b & rhs.b,
+            start: self.start & rhs.start,
+            select: self.select & rhs.select,
+            d_up: self.d_up & rhs.d_up,
+            d_down: self.d_down & rhs.d_down,
+            d_left: self.d_left & rhs.d_left,
+            d_right: self.d_right & rhs.d_right,
+            l: self.l & rhs.l,
+            r: self.r & rhs.r,
+            x: self.x & rhs.x,
+            y: self.y & rhs.y,
+            touch: self.touch.and(rhs.touch),
+        }
+    }
+}
+
+impl core::ops::Not for Input {
+    type Output = Input;
+
+    fn not(self) -> Self::Output {
+        Self {
+            a: !self.a,
+            b: !self.b,
+            start: !self.start,
+            select: !self.select,
+            d_up: !self.d_up,
+            d_down: !self.d_down,
+            d_left: !self.d_left,
+            d_right: !self.d_right,
+            l: !self.l,
+            r: !self.r,
+            x: !self.x,
+            y: !self.y,
+            touch: None
+        }
+    }
+}
+
+impl core::ops::BitAndAssign for Input {
+    fn bitand_assign(&mut self, rhs: Self) {
+        *self = *self & rhs;
+    }
+}
+
+impl core::ops::BitOrAssign for Input {
+    fn bitor_assign(&mut self, rhs: Self) {
+        *self = *self | rhs;
+    }
 }
 
 /// Describes screen data.
@@ -109,6 +187,17 @@ pub struct ScreenData {
     ///
     /// Note: This is not allowed to change.
     pub encoding: ScreenDataEncoding
+}
+
+impl Default for ScreenData {
+    fn default() -> Self {
+        Self {
+            pixels: Vec::new(),
+            width: 0,
+            height: 0,
+            encoding: ScreenDataEncoding::A8R8G8B8
+        }
+    }
 }
 
 /// Describes the color encoding.

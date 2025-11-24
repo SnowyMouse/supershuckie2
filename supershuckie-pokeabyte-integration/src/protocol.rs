@@ -3,6 +3,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use num_enum::TryFromPrimitive;
 use tinyvec::ArrayVec;
 use crate::PokeAByteError;
+use crate::shared_memory::POKE_A_BYTE_SHARED_MEMORY_LEN;
 
 const PROTOCOL_VERSION: u8 = 1;
 
@@ -69,7 +70,7 @@ pub enum PokeAByteProtocolRequestPacket<'a> {
     NoOp,
     Ping,
     Setup {
-        frame_skip: u32,
+        frame_skip: Option<u32>,
         blocks: ArrayVec<[PokeAByteProtocolRequestReadBlock; MAX_NUMBER_OF_READ_BLOCKS]>
     },
     Write {
@@ -79,11 +80,10 @@ pub enum PokeAByteProtocolRequestPacket<'a> {
     Close,
 }
 
-#[derive(Default, Copy, Clone, PartialEq, Debug)]
+#[derive(Default, Clone, PartialEq, Debug)]
 pub struct PokeAByteProtocolRequestReadBlock {
-    pub memory_map_file_address: usize,
-    pub game_address: u32,
-    pub length: usize
+    pub range: core::ops::Range<usize>,
+    pub game_address: u32
 }
 
 impl<'a> PokeAByteProtocolRequestPacket<'a> {
@@ -106,7 +106,7 @@ impl<'a> PokeAByteProtocolRequestPacket<'a> {
                     return Err(PokeAByteError::BadPacketFromClient { explanation: Cow::Borrowed("too many read blocks") })
                 }
 
-                let frame_skip = LittleEndian::read_u32(&bytes[12..]);
+                let frame_skip = u32::try_from(LittleEndian::read_i32(&bytes[12..])).ok();
                 let blocks = (&bytes[32..])
                     .chunks_exact(0xC)
                     .take(block_count);
@@ -114,12 +114,26 @@ impl<'a> PokeAByteProtocolRequestPacket<'a> {
                 let mut blocks_into = ArrayVec::new();
 
                 for i in blocks {
-                    let memory_map_file_address: usize = LittleEndian::read_u32(&i[0..]) as usize;
+                    let memory_map_file_offset: usize = LittleEndian::read_u32(&i[0..]) as usize;
                     let game_address = LittleEndian::read_u32(&i[4..]);
                     let length: usize = LittleEndian::read_u32(&i[8..]) as usize;
 
+                    u32::try_from(length)
+                        .ok()
+                        .and_then(|i| i.checked_add(game_address))
+                        .ok_or_else(|| PokeAByteError::BadPacketFromClient { explanation: Cow::Borrowed("length+address overflows") })?;
+
+                    let end = length.checked_add(memory_map_file_offset)
+                        .ok_or_else(|| PokeAByteError::BadPacketFromClient { explanation: Cow::Borrowed("length+offset overflows") })?;
+
+                    if end > POKE_A_BYTE_SHARED_MEMORY_LEN {
+                        return Err(PokeAByteError::BadPacketFromClient { explanation: Cow::Borrowed("maximum shared memory size of 4 MiB exceeded") });
+                    }
+
+                    let range = length .. end;
+
                     blocks_into.push(PokeAByteProtocolRequestReadBlock {
-                        memory_map_file_address, game_address, length
+                        game_address, range
                     })
                 }
 

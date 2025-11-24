@@ -12,6 +12,10 @@ edition = "2024"
 license = "GPL-3.0-only"
 
 [workspace.dependencies]
+# Keep up-to-date
+supershuckie-replay-recorder = { version = "0.1.0", path = "supershuckie-replay-recorder" }
+supershuckie-pokeabyte-integration = { version = "0.1.0", path = "supershuckie-pokeabyte-integration" }
+
 num_enum = "0.7.5"
 tinyvec = { version = "1.10.0", features = ["alloc"], default-features = false }
 spin = "0.10.0"

@@ -1,6 +1,7 @@
 use tinyvec::TinyVec;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::num::NonZeroU16;
 
 mod io;
 pub use io::*;
@@ -65,26 +66,32 @@ pub enum Packet {
 }
 
 /// Speed value that uses a fixed point number.
-#[derive(Copy, Clone, Debug, PartialEq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(transparent)]
 pub struct Speed {
     /// A fixed point number that, when divided by 256, will yield the speed value.
-    pub speed_over_256: u16
+    pub speed_over_256: NonZeroU16
 }
 
 impl Speed {
     /// Get the speed value from a multiplier.
     pub const fn from_multiplier_float(multiplier: f64) -> Self {
         Self {
-            speed_over_256: (multiplier * 256.0) as u16
+            speed_over_256: match NonZeroU16::new((multiplier * 256.0) as u16) {
+                Some(n) => n,
+                None => NonZeroU16::new(1).expect("1 is not 0")
+            }
         }
     }
     /// Convert the speed value into a multiplier.
     pub const fn into_multiplier_float(self) -> f64 {
-        match self.speed_over_256 {
-            0 => 1.0 / 256.0,
-            n => (n as f64) / 256.0
-        }
+        (self.speed_over_256.get() as f64) / 256.0
+    }
+}
+
+impl Default for Speed {
+    fn default() -> Self {
+        Self::from_multiplier_float(1.0)
     }
 }
 
