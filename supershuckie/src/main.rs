@@ -39,17 +39,17 @@ impl SuperShuckie {
             )
         };
 
-        let renderer = match unsafe { Renderer::attach(window) } {
+        if window.is_null() {
+            return None
+        }
+
+        let renderer = match unsafe { Renderer::attach_to_sdl(window) } {
             Ok(n) => n,
             Err(e) => {
                 show_message(MessageType::Error, "Failed to instantiate renderer", &format!("The renderer could not be instantiated:\n\n{e}"));
                 return None;
             }
         };
-
-        if window.is_null() {
-            return None
-        }
 
         Some(Box::new(Mutex::new(SuperShuckie::default())))
     }

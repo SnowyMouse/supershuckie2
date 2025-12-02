@@ -12,7 +12,7 @@ use vulkano::{Version, VulkanLibrary, VulkanObject};
 use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateFlags, QueueCreateInfo, QueueFamilyProperties, QueueFlags};
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
-use vulkano::memory::allocator::{FreeListAllocator, GenericMemoryAllocator, StandardMemoryAllocator};
+use vulkano::memory::allocator::{FreeListAllocator, GenericMemoryAllocator, GenericMemoryAllocatorCreateInfo, StandardMemoryAllocator};
 use vulkano::swapchain::{Surface, SurfaceApi};
 
 static VULKAN_INSTANCE: OnceLock<VulkanInstanceData> = OnceLock::new();
@@ -44,7 +44,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub unsafe fn attach(window: *mut SDL_Window) -> Result<Self, String> {
+    pub unsafe fn attach_to_sdl(window: *mut SDL_Window) -> Result<Self, String> {
         let instance_data = VULKAN_INSTANCE.get().expect("vulkan not loaded");
         let mut device_found = None;
         let mut index_found = None;
@@ -95,6 +95,12 @@ impl Renderer {
         };
 
         let queue = queue.next().expect("no queue");
+
+        let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
+
+        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
+            device.clone(), Default::default(),
+        ));
         let mut surface_raw = zeroed();
 
         if unsafe { !SDL_Vulkan_CreateSurface(
@@ -113,11 +119,6 @@ impl Renderer {
             SurfaceApi::DisplayPlane,
             None
         )) };
-
-        let memory_allocator = Arc::new(StandardMemoryAllocator::new(device.clone(), Default::default()));
-        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
-            device.clone(), Default::default(),
-        ));
 
         Ok(Self {
             device,
