@@ -1,3 +1,12 @@
+# This is the build folder
 /target
+
+# Don't want to accidentally commit someone's personal config
 .idea
+.vscode
+
+# These things...
 .DS_Store
+
+# macOS might need libMoltenVK.dylib; avoid checking it in by mistake
+*.dylib
