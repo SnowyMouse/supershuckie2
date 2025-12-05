@@ -10,11 +10,14 @@ fn main() {
 fn build_shared_memory_macos() {
     let mut build = cc::Build::new();
     build.file("src/shared_memory/macos.c");
+    println!("cargo::rerun-if-changed=src/shared_memory/macos.c");
     build.compile("pokeabyte_integration_shared_memory_macos");
+
 }
 
 fn build_shared_memory_linux() {
     let mut build = cc::Build::new();
     build.file("src/shared_memory/linux.c");
+    println!("cargo::rerun-if-changed=src/shared_memory/linux.c");
     build.compile("pokeabyte_integration_shared_memory_linux");
 }
