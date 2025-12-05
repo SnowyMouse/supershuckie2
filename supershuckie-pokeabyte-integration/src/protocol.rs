@@ -126,6 +126,8 @@ impl<'a> PokeAByteProtocolRequestPacket<'a> {
                     let end = length.checked_add(memory_map_file_offset)
                         .ok_or_else(|| PokeAByteError::BadPacketFromClient { explanation: Cow::Borrowed("length+offset overflows") })?;
 
+                    // On macOS, error out as shm_open fails above 4 MiB.
+                    #[cfg(target_os = "macos")]
                     if end > POKE_A_BYTE_SHARED_MEMORY_LEN {
                         return Err(PokeAByteError::BadPacketFromClient { explanation: Cow::Borrowed("maximum shared memory size of 4 MiB exceeded") });
                     }

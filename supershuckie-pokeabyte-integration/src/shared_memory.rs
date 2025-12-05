@@ -18,14 +18,14 @@ unsafe extern "C" {
 }
 
 impl PokeAByteSharedMemory {
-    pub(crate) fn new() -> Result<PokeAByteSharedMemory, PokeAByteError> {
+    pub(crate) fn new(len: usize) -> Result<PokeAByteSharedMemory, PokeAByteError> {
         let mut error = null_mut();
         let memory = unsafe {
-            let ram = supershuckie_pokeabyte_try_create_shared_memory(POKE_A_BYTE_SHARED_MEMORY_LEN, &mut error);
+            let ram = supershuckie_pokeabyte_try_create_shared_memory(len, &mut error);
             if ram.is_null() {
                 return Err(PokeAByteError::SharedMemoryFailure { explanation: Cow::Owned(format!("Error: {}", CStr::from_ptr(error).to_str().unwrap())) })
             }
-            std::slice::from_raw_parts_mut(ram, POKE_A_BYTE_SHARED_MEMORY_LEN)
+            std::slice::from_raw_parts_mut(ram, len)
         };
 
         Ok(Self {

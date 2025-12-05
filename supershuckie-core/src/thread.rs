@@ -259,11 +259,13 @@ impl ThreadedSuperShuckieCoreThread {
         let mut ram = integration.get_memory().lock().expect("integration memory crashed");
 
         // SAFETY: "Only one way to find out"
-        let ram = unsafe { ram.get_memory_mut() };
-
-        for read in &setup.blocks {
-            let into = ram.get_mut(read.range.clone()).expect("read range was wrong (this should have been checked!)");
-            let _ = self.core.get_core().read_ram(read.game_address, into); // TODO: handle this?
+        let memory_option = ram.as_mut();
+        if let Some(memory) = memory_option  {
+            let ram = unsafe { memory.get_memory_mut() };
+            for read in &setup.blocks {
+                let into = ram.get_mut(read.range.clone()).expect("read range was wrong (this should have been checked!)");
+                let _ = self.core.get_core().read_ram(read.game_address, into); // TODO: handle this?
+            }
         }
     }
 

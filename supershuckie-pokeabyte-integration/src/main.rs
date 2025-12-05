@@ -8,9 +8,12 @@ fn main() {
 
     loop {
         {
-            let mut memory = server.get_memory().lock().unwrap();
-            unsafe { memory.get_memory_mut() }.fill(q);
-            q = q.wrapping_add(1);
+            let mut memory_lock = server.get_memory().lock().unwrap();
+            let memory_option = memory_lock.as_mut();
+            if let Some(memory) = memory_option  {
+                unsafe { memory.get_memory_mut() }.fill(q);
+                q = q.wrapping_add(1);
+            }
         }
         std::thread::sleep(Duration::from_secs(1));
     }

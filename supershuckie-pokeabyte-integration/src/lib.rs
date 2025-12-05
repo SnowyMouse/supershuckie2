@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::mem;
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex, RwLock, Weak};
 use std::time::Duration;
@@ -19,7 +20,7 @@ pub struct PokeAByteWrite {
 
 pub struct PokeAByteIntegrationServer {
     socket: UdpSocket,
-    shared_memory: Mutex<PokeAByteSharedMemory>,
+    shared_memory: Mutex<Option<PokeAByteSharedMemory>>,
     writes: Mutex<Vec<PokeAByteWrite>>,
     setup: RwLock<Option<Arc<PokeAByteSetup>>>
 }
@@ -39,7 +40,7 @@ impl PokeAByteIntegrationServer {
 
         let this = Arc::new(Self {
             socket,
-            shared_memory: Mutex::new(PokeAByteSharedMemory::new()?),
+            shared_memory: Mutex::new(None),
             setup: RwLock::new(None),
             writes: Mutex::new(Vec::with_capacity(64))
         });
@@ -90,10 +91,19 @@ impl PokeAByteIntegrationServer {
                     // unhandled for now
                 },
                 PokeAByteProtocolRequestPacket::Setup { blocks, frame_skip } => {
-                    let _ = promotion.socket.send_to(&MetadataHeader::new_response(Instruction::Setup).into_bytes(), addr);
+                    let memory_size = blocks
+                        .iter()
+                        .map(|i| i.range.end)
+                        .max()
+                        .unwrap_or(0);
+                    
                     *promotion.setup.write().expect("failed to write to blocks") = Some(Arc::new(PokeAByteSetup {
                         blocks, frame_skip
                     }));
+                    let mut state = promotion.shared_memory.lock().expect("Could not lock mutex");
+                    *state = None; // For cleaning up the old SHM and clearing the file descriptor.
+                    *state = Some(PokeAByteSharedMemory::new(memory_size).expect("Failed to initialize shared memory"));
+                    let _ = promotion.socket.send_to(&MetadataHeader::new_response(Instruction::Setup).into_bytes(), addr);
                 },
                 PokeAByteProtocolRequestPacket::Write { data, address } => {
                     if data.is_empty() {
@@ -112,7 +122,7 @@ impl PokeAByteIntegrationServer {
         &self.writes
     }
 
-    pub fn get_memory(&self) -> &Mutex<PokeAByteSharedMemory> {
+    pub fn get_memory(&self) -> &Mutex<Option<PokeAByteSharedMemory>> {
         &self.shared_memory
     }
 }
