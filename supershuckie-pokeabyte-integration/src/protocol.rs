@@ -76,7 +76,7 @@ pub enum PokeAByteProtocolRequestPacket<'a> {
         blocks: ArrayVec<[PokeAByteProtocolRequestReadBlock; MAX_NUMBER_OF_READ_BLOCKS]>
     },
     Write {
-        address: u32,
+        address: u64,
         data: &'a [u8]
     },
     Close,
@@ -151,8 +151,8 @@ impl<'a> PokeAByteProtocolRequestPacket<'a> {
                     return Err(PokeAByteError::BadPacketFromClient { explanation: Cow::Borrowed("too small to be write header") })
                 };
 
-                let address = LittleEndian::read_u32(&bytes[0x8..]);
-                let length: usize = LittleEndian::read_u32(&bytes[0xC..]) as usize;
+                let address = LittleEndian::read_u64(&bytes[0x8..]);
+                let length: usize = LittleEndian::read_u32(&bytes[0x10..]) as usize;
 
                 let Some(data) = bytes.get(0x10..) else {
                     return Err(PokeAByteError::BadPacketFromClient { explanation: Cow::Borrowed("failed to read data: no bytes after length") })

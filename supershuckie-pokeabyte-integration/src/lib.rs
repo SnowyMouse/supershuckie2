@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::net::UdpSocket;
-use std::sync::{Arc, Mutex, RwLock, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
 use tinyvec::{ArrayVec, TinyVec};
 use crate::protocol::{Instruction, MetadataHeader, PokeAByteProtocolRequestPacket, PokeAByteProtocolRequestReadBlock, MAX_NUMBER_OF_READ_BLOCKS};
@@ -13,23 +14,58 @@ compile_error!("must be compiled for 64-bit");
 const POKEABYTE_UDP: &str = "127.0.0.1:55356";
 
 pub struct PokeAByteWrite {
-    pub address: u32,
+    pub address: u64,
     pub data: TinyVec<[u8; 16]>
 }
 
 pub struct PokeAByteIntegrationServer {
     socket: UdpSocket,
-    shared_memory: Mutex<Option<PokeAByteSharedMemory>>,
-    writes: Mutex<Vec<PokeAByteWrite>>,
-    setup: RwLock<Option<Arc<PokeAByteSetup>>>
+    session: Arc<Mutex<Option<PokeAByteSession>>>
 }
 
+/// All session-related data from Poke-A-Byte.
+pub struct PokeAByteSession {
+    /// Shared memory block.
+    pub shared_memory: PokeAByteSharedMemory,
+
+    /// Writes requested from Poke-A-Byte.
+    pub writes: PokeAByteWriteQueue,
+
+    /// Current setup configuration from the Poke-A-Byte client.
+    pub config: PokeAByteSetup
+}
+
+/// Write queue from Poke-A-Byte.
+pub struct PokeAByteWriteQueue {
+    queue: Receiver<PokeAByteWrite>
+}
+
+impl Iterator for PokeAByteWriteQueue {
+    type Item = PokeAByteWrite;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.queue.try_recv().ok()
+    }
+}
+
+/// Configuration shared from Poke-A-Byte.
+#[derive(Debug)]
 pub struct PokeAByteSetup {
+    /// Block mapping.
+    ///
+    /// This indicates what RAM address in the game corresponds to what offset (and span) in the
+    /// shared memory buffer.
     pub blocks: ArrayVec<[PokeAByteProtocolRequestReadBlock; MAX_NUMBER_OF_READ_BLOCKS]>,
-    pub frame_skip: Option<u32>
+
+    /// Suggested number of frames to skip, if any.
+    ///
+    /// The emulator can (and ideally should) respect this configuration.
+    pub frame_skip: Option<u32>,
+
+    _cant_let_you_instantiate_that_stair_fax: ()
 }
 
 impl PokeAByteIntegrationServer {
+    /// Begin listening.
     pub fn begin_listen() -> Result<Arc<Self>, PokeAByteError> {
         let socket = UdpSocket::bind(&POKEABYTE_UDP)
             .map_err(|e| PokeAByteError::SocketFailure { explanation: Cow::Owned(format!("Failed to bind: {e:?}")) })?;
@@ -39,9 +75,7 @@ impl PokeAByteIntegrationServer {
 
         let this = Arc::new(Self {
             socket,
-            shared_memory: Mutex::new(None),
-            setup: RwLock::new(None),
-            writes: Mutex::new(Vec::with_capacity(64))
+            session: Arc::new(Mutex::new(None))
         });
 
         let this_downgraded = Arc::downgrade(&this);
@@ -53,12 +87,15 @@ impl PokeAByteIntegrationServer {
         Ok(this)
     }
 
-    pub fn get_setup(&self) -> Option<Arc<PokeAByteSetup>> {
-        self.setup.read().expect("failed to read blocks").clone()
+    /// Get the current session, if any.
+    pub fn get_session(&self) -> MutexGuard<'_, Option<PokeAByteSession>> {
+        self.session.lock().expect("could not get session???")
     }
 
     fn thread(this: Weak<PokeAByteIntegrationServer>) {
         let mut buffer = vec![0u8; 65536];
+
+        let mut writer: Option<Sender<PokeAByteWrite>> = None;
 
         loop {
             let Some(promotion) = this.upgrade() else {
@@ -95,34 +132,50 @@ impl PokeAByteIntegrationServer {
                         .map(|i| i.range.end)
                         .max()
                         .unwrap_or(0);
-                    
-                    *promotion.setup.write().expect("failed to write to blocks") = Some(Arc::new(PokeAByteSetup {
-                        blocks, frame_skip
-                    }));
-                    let mut state = promotion.shared_memory.lock().expect("Could not lock mutex");
-                    *state = None; // For cleaning up the old SHM and clearing the file descriptor.
-                    *state = Some(PokeAByteSharedMemory::new(memory_size).expect("Failed to initialize shared memory"));
+
+                    let mut session = promotion.session.lock().expect("Failed to lock: crash?");
+                    *session = None; // For cleaning up the old SHM and clearing the file descriptor.
+
+                    // Safety: We're going to zero-initialize this before we use it.
+                    let mut shared_memory = unsafe { PokeAByteSharedMemory::new(memory_size) }
+                        .expect("Failed to initialize shared memory");
+
+                    let (writer_queue, writes_queue) = channel();
+
+                    let writes = PokeAByteWriteQueue { queue: writes_queue };
+                    writer = Some(writer_queue);
+
+                    // let Poke-A-Byte know that we're open for business, since zero initialization
+                    // is not instant (though it'll probably still be quick)
                     let _ = promotion.socket.send_to(&MetadataHeader::new_response(Instruction::Setup).into_bytes(), addr);
+
+                    // Zero-initialize
+                    unsafe { shared_memory.get_memory_mut() }.fill(0);
+
+                    *session = Some(PokeAByteSession {
+                        shared_memory,
+                        writes,
+                        config: PokeAByteSetup {
+                            blocks, frame_skip, _cant_let_you_instantiate_that_stair_fax: ()
+                        },
+                    });
+
                 },
                 PokeAByteProtocolRequestPacket::Write { data, address } => {
                     if data.is_empty() {
                         continue
                     }
 
-                    promotion.writes.lock().expect("failed to write to writes").push(PokeAByteWrite {
+                    let Some(writer) = writer.as_ref() else {
+                        continue
+                    };
+
+                    let _ = writer.send(PokeAByteWrite {
                         address, data: data.into()
-                    })
+                    });
                 }
             }
         }
-    }
-
-    pub fn get_writes(&self) -> &Mutex<Vec<PokeAByteWrite>> {
-        &self.writes
-    }
-
-    pub fn get_memory(&self) -> &Mutex<Option<PokeAByteSharedMemory>> {
-        &self.shared_memory
     }
 }
 

@@ -18,7 +18,11 @@ unsafe extern "C" {
 }
 
 impl PokeAByteSharedMemory {
-    pub(crate) fn new(len: usize) -> Result<PokeAByteSharedMemory, PokeAByteError> {
+    /// # Safety
+    ///
+    /// The memory returned is not guaranteed to be initialized and must be zero-initialized
+    /// manually.
+    pub(crate) unsafe fn new(len: usize) -> Result<PokeAByteSharedMemory, PokeAByteError> {
         let mut error = null_mut();
         let memory = unsafe {
             let ram = supershuckie_pokeabyte_try_create_shared_memory(len, &mut error);
@@ -35,7 +39,8 @@ impl PokeAByteSharedMemory {
 
     /// # Safety
     ///
-    /// There is no protection against data races from other processes.
+    /// There is no protection against data races from other processes. It is not recommended to use
+    /// this for anything except reading bytes.
     #[inline]
     pub unsafe fn get_memory(&self) -> &[u8] {
         self.memory
@@ -43,7 +48,8 @@ impl PokeAByteSharedMemory {
 
     /// # Safety
     ///
-    /// There is no protection against data races from other processes.
+    /// There is no protection against data races from other processes. It is not recommended to use
+    /// this for anything except reading and writing bytes.
     #[inline]
     pub unsafe fn get_memory_mut(&mut self) -> &mut [u8] {
         self.memory

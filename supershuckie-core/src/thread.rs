@@ -238,8 +238,13 @@ impl ThreadedSuperShuckieCoreThread {
             return
         };
 
-        for i in integration.get_writes().lock().expect("integration writes crashed").drain(..) {
-            self.core.enqueue_write(i.address, i.data);
+        let mut session_lock = integration.get_session();
+        let Some(session) = session_lock.as_mut() else {
+            return;
+        };
+
+        for write in &mut session.writes {
+            self.core.enqueue_write(write.address as u32, write.data);
         }
 
         // don't update reads mid-frame; it's too slow
@@ -247,25 +252,16 @@ impl ThreadedSuperShuckieCoreThread {
             return;
         }
 
-        let Some(setup) = integration.get_setup() else {
-            return
-        };
-
         // handle frame skipping unless we're paused
-        if self.is_running && let Some(skipping) = setup.frame_skip && self.core.total_frames % ((skipping as u64) + 1) != 0 {
+        if self.is_running && let Some(skipping) = session.config.frame_skip && self.core.total_frames % ((skipping as u64) + 1) != 0 {
             return
         }
 
-        let mut ram = integration.get_memory().lock().expect("integration memory crashed");
-
         // SAFETY: "Only one way to find out"
-        let memory_option = ram.as_mut();
-        if let Some(memory) = memory_option  {
-            let ram = unsafe { memory.get_memory_mut() };
-            for read in &setup.blocks {
-                let into = ram.get_mut(read.range.clone()).expect("read range was wrong (this should have been checked!)");
-                let _ = self.core.get_core().read_ram(read.game_address, into); // TODO: handle this?
-            }
+        let ram = unsafe { session.shared_memory.get_memory_mut() };
+        for read in &session.config.blocks {
+            let into = ram.get_mut(read.range.clone()).expect("read range was wrong (this should have been checked!)");
+            let _ = self.core.get_core().read_ram(read.game_address, into); // TODO: handle this?
         }
     }
 
