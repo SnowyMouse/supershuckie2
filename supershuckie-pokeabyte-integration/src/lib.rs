@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::mem;
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex, RwLock, Weak};
 use std::time::Duration;

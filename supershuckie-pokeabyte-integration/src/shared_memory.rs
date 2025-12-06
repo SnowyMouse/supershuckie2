@@ -7,10 +7,10 @@ pub struct PokeAByteSharedMemory {
     memory: &'static mut [u8]
 }
 
-// TODO: This is not really the correct way to do this. macOS limits mmap to 4 MB for example; we
-// probably need to do some sort of repeated call to mmap() to get all "views" of the shared object
-// in that case
-pub(crate) const POKE_A_BYTE_SHARED_MEMORY_LEN: usize = 1024 * 1024 * 4;
+// macOS mmap is limited to 4 MiB. As such, we cannot (presently) support larger memory mapped files
+// here. Note, however, that 4 MiB is sufficient even for NDS games, so we're probably fine as-is.
+#[cfg(target_os = "macos")]
+pub(crate) const MACOS_MAX_MMAP_MEMORY_LENGTH: usize = 1024 * 1024 * 4;
 
 unsafe extern "C" {
     fn supershuckie_pokeabyte_try_create_shared_memory(len: usize, error: *mut *mut c_char) -> *mut u8;

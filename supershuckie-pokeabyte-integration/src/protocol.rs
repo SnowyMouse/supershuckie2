@@ -3,7 +3,9 @@ use byteorder::{ByteOrder, LittleEndian};
 use num_enum::TryFromPrimitive;
 use tinyvec::ArrayVec;
 use crate::PokeAByteError;
-use crate::shared_memory::POKE_A_BYTE_SHARED_MEMORY_LEN;
+
+#[cfg(target_os = "macos")]
+use crate::shared_memory::MACOS_MAX_MMAP_MEMORY_LENGTH;
 
 const PROTOCOL_VERSION: u8 = 1;
 
@@ -128,11 +130,11 @@ impl<'a> PokeAByteProtocolRequestPacket<'a> {
 
                     // On macOS, error out as shm_open fails above 4 MiB.
                     #[cfg(target_os = "macos")]
-                    if end > POKE_A_BYTE_SHARED_MEMORY_LEN {
+                    if end > MACOS_MAX_MMAP_MEMORY_LENGTH {
                         return Err(PokeAByteError::BadPacketFromClient { explanation: Cow::Borrowed("maximum shared memory size of 4 MiB exceeded") });
                     }
 
-                    let range = length .. end;
+                    let range = memory_map_file_offset .. end;
 
                     blocks_into.push(PokeAByteProtocolRequestReadBlock {
                         game_address, range
