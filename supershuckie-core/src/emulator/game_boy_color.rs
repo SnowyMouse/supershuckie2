@@ -8,7 +8,8 @@ use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 use safeboy::rgb_encoder::encode_a8r8g8b8;
-use safeboy::{DirectAccessRegion, Gameboy, GameboyCallbacks, InputButton, Model, RunnableInstanceFunctions, RunningGameboy, TurboMode, VBlankType};
+use safeboy::{DirectAccessRegion, Gameboy, GameboyCallbacks, InputButton, RunnableInstanceFunctions, RunningGameboy, TurboMode, VBlankType};
+pub use safeboy::Model;
 
 /// Game Boy and Game Boy Color emulator.
 ///

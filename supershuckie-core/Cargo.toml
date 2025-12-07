@@ -8,7 +8,7 @@ license.workspace = true
 safeboy = { workspace = true }
 supershuckie-replay-recorder = { workspace = true }
 supershuckie-pokeabyte-integration = { workspace = true, optional = true }
-tinyvec = { workspace = true }
+spin = { workspace = true }
 
 [features]
 default = ["std", "pokeabyte"]

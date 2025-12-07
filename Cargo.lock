@@ -414,9 +414,18 @@ name = "supershuckie-core"
 version = "0.1.0"
 dependencies = [
  "safeboy",
+ "spin",
  "supershuckie-pokeabyte-integration",
  "supershuckie-replay-recorder",
- "tinyvec",
+]
+
+[[package]]
+name = "supershuckie-core-c"
+version = "0.1.0"
+dependencies = [
+ "supershuckie-core",
+ "supershuckie-pokeabyte-integration",
+ "supershuckie-replay-recorder",
 ]
 
 [[package]]

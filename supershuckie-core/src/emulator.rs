@@ -1,9 +1,11 @@
 //! Functionality for emulator cores.
 
 mod game_boy_color;
+mod null;
 
 use alloc::string::String;
 pub use game_boy_color::*;
+pub use null::*;
 
 use alloc::vec::Vec;
 
