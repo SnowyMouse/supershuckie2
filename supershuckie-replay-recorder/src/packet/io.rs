@@ -1,13 +1,13 @@
 use core::cmp::Ordering;
 
-use alloc::vec::Vec;
+use crate::packet::{BookmarkMetadata, ByteVec, KeyframeMetadata, Packet, Speed, UnsignedInteger};
+use crate::{InputBuffer, TimestampMillis};
 use alloc::borrow::{Cow, ToOwned};
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::num::NonZeroU16;
 use num_enum::TryFromPrimitive;
-use tinyvec::{ArrayVec, TinyVec};
-use crate::InputBuffer;
-use crate::packet::{BookmarkMetadata, ByteVec, KeyframeMetadata, Packet, Speed, UnsignedInteger};
+use tinyvec::TinyVec;
 
 /// Describes how to write data to a stream.
 #[derive(Clone, Debug, PartialEq)]
@@ -36,10 +36,15 @@ impl Default for PacketWriteCommand<'_> {
 
 /// Defines data that can be written to/from a replay stream.
 pub trait PacketIO<'a>: Sized + 'a {
+    /// Readable-name of the packet.
+    fn name(&self) -> &'static str {
+        core::any::type_name_of_val(self)
+    }
+
     /// Get a list of write instructions.
     /// 
     /// You can use this to write the data to both buffers and streams without duplicating logic.
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]>;
+    fn write_packet_instructions(&'a self) -> PacketInstructionsVec<'a>;
 
     /// Attempt to read all bytes.
     /// 
@@ -47,13 +52,16 @@ pub trait PacketIO<'a>: Sized + 'a {
     fn read_all(from: &mut &'a[u8]) -> Result<Self, PacketReadError>;
 }
 
+/// Container for packet instructions.
+pub type PacketInstructionsVec<'a> = TinyVec<[PacketWriteCommand<'a>; 32]>;
+
 // For UnsignedIntegers, we convert to little endian bytes.
 //
 // We then remove any trailing 00's on the right (to do this we can just truncate to (log2(*self) + 7) / 8).
 //
 // We then store the length as u8 followed by the little endian bytes
-impl<'a> PacketIO<'a> for UnsignedInteger {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
+impl PacketIO<'_> for UnsignedInteger {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
         if *self == 0 {
             return core::iter::once(PacketWriteCommand::WriteByte { byte: 0 }).collect();
         }
@@ -62,9 +70,9 @@ impl<'a> PacketIO<'a> for UnsignedInteger {
         bytes.extend_from_slice(self.to_le_bytes().as_slice());
 
         // get number of bytes needed to read it...
-        bytes.truncate((self.ilog2() as usize + 7) / 8);
+        bytes.truncate((1 + self.ilog2() / 8) as usize);
 
-        let mut writer = ArrayVec::new();
+        let mut writer = PacketInstructionsVec::new();
         writer.push(PacketWriteCommand::WriteByte { byte: bytes.len() as u8 });
         writer.push(PacketWriteCommand::WriteVec { bytes });
         writer
@@ -76,6 +84,7 @@ impl<'a> PacketIO<'a> for UnsignedInteger {
 
         // short circuit if 0
         if len_byte == 0 {
+            *what = remaining_bytes;
             return Ok(0)
         }
 
@@ -98,8 +107,8 @@ impl<'a> PacketIO<'a> for UnsignedInteger {
     }
 }
 
-impl<'a> PacketIO<'a> for usize {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
+impl PacketIO<'_> for usize {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
         let v = UnsignedInteger::try_from(*self).expect("failed to convert usize to UnsignedInteger; target architecture exceeds 64 bits?");
         static_packet_write_array_references(v.write_packet_instructions())
     }
@@ -112,8 +121,8 @@ impl<'a> PacketIO<'a> for usize {
 
 // For TinyVecs, we put the size followed by the actual bytes
 impl PacketIO<'_> for ByteVec {
-    fn write_packet_instructions<'a>(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut instructions = ArrayVec::new();
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
+        let mut instructions: PacketInstructionsVec = PacketInstructionsVec::new();
         instructions.extend(static_packet_write_array_references(self.len().write_packet_instructions()));
         instructions.push(PacketWriteCommand::WriteSlice { bytes: self.as_slice() });
         instructions
@@ -133,8 +142,8 @@ impl PacketIO<'_> for ByteVec {
 }
 
 impl<'a> PacketIO<'a> for &'a str {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut instructions = ArrayVec::new();
+    fn write_packet_instructions(&'a self) -> PacketInstructionsVec<'a> {
+        let mut instructions = PacketInstructionsVec::new();
         instructions.extend(static_packet_write_array_references(self.len().write_packet_instructions()));
         instructions.push(PacketWriteCommand::WriteSlice { bytes: self.as_bytes() });
         instructions
@@ -152,22 +161,22 @@ impl<'a> PacketIO<'a> for &'a str {
     }
 }
 
-impl<'a> PacketIO<'a> for String {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut instructions = ArrayVec::new();
+impl PacketIO<'_> for String {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
+        let mut instructions = PacketInstructionsVec::new();
         instructions.extend(static_packet_write_array_references(self.len().write_packet_instructions()));
         instructions.push(PacketWriteCommand::WriteSlice { bytes: self.as_bytes() });
         instructions
     }
 
-    fn read_all(from: &mut &'a [u8]) -> Result<Self, PacketReadError> {
+    fn read_all(from: &mut &[u8]) -> Result<Self, PacketReadError> {
         <&str>::read_all(from).map(|i| i.to_owned())
     }
 }
 
 impl<'a, T: PacketIO<'a>> PacketIO<'a> for Vec<T> {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut instructions = ArrayVec::new();
+    fn write_packet_instructions(&'a self) -> PacketInstructionsVec<'a> {
+        let mut instructions = PacketInstructionsVec::new();
         instructions.extend(static_packet_write_array_references(self.len().write_packet_instructions()));
         for i in self {
             instructions.extend(i.write_packet_instructions());
@@ -195,11 +204,22 @@ pub enum PacketReadError {
 
 // Make ArrayVec<[PacketWriteCommand<'_>; LEN]> into 'static.
 // Useful for temporarily made values
-fn static_packet_write_array_references<const LEN: usize>(from: ArrayVec<[PacketWriteCommand<'_>; LEN]>) -> ArrayVec<[PacketWriteCommand<'static>; LEN]> {
-    let mut result = ArrayVec::new();
+fn static_packet_write_array_references<'a, 'b, const LEN: usize>(from: TinyVec<[PacketWriteCommand<'a>; LEN]>) -> TinyVec<[PacketWriteCommand<'b>; LEN]> {
+    let mut result = TinyVec::new();
     for i in from {
+        let bytes = i.bytes();
+
+        if bytes.is_empty() {
+            continue
+        }
+
+        if bytes.len() == 1 {
+            result.push(PacketWriteCommand::WriteByte { byte: bytes[0] });
+            continue
+        }
+
         match i {
-            PacketWriteCommand::WriteByte { byte } => result.push(PacketWriteCommand::WriteByte { byte }),
+            PacketWriteCommand::WriteByte { .. } => unreachable!("already wrote a byte"),
             PacketWriteCommand::WriteVec { bytes } => result.push(PacketWriteCommand::WriteVec { bytes }),
             PacketWriteCommand::WriteSlice { bytes } => {
                 let mut v = TinyVec::new();
@@ -215,18 +235,11 @@ fn static_packet_write_array_references<const LEN: usize>(from: ArrayVec<[Packet
 #[derive(Copy, Clone, PartialEq, Debug, TryFromPrimitive)]
 #[repr(u8)]
 pub enum PacketDiscriminator {
-    /// Run 0 frames.
-    /// 
-    /// This is basically a no-op.
+    /// Do nothing.
     NoOp = 0x00,
 
-    /// Run N number of frames, where N = the binary value of the discriminator.
-    /// 
-    /// This applies for all discriminators between `0x01..=0x7F`
-    RunFrameN = 0x01,
-
-    /// Run a variable number of frames.
-    RunFrameVar = 0x80,
+    /// Run for one frame.
+    NextFrame = 0x80,
 
     /// 8-bit input
     ChangeInput8 = 0x81,
@@ -265,7 +278,7 @@ pub enum PacketDiscriminator {
     ResetConsole = 0xF3,
 
     /// Load the save state at the given keyframe
-    RestoreState = 0xF4,
+    LoadSaveState = 0xF4,
 
     /// Compressed blob
     CompressedBlob = 0xFE,
@@ -288,8 +301,8 @@ impl PartialOrd<PacketDiscriminator> for u8 {
 
 macro_rules! packet_io_for_int {
     ($int_type:tt) => {
-        impl<'a> PacketIO<'a> for $int_type {
-            fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
+        impl PacketIO<'_> for $int_type {
+            fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
                 core::iter::once(PacketWriteCommand::WriteVec { bytes: (*self).to_le_bytes().as_slice().into() }).collect()
             }
             fn read_all(from: &mut &[u8]) -> Result<Self, PacketReadError> {
@@ -310,8 +323,8 @@ packet_io_for_int!(u32);
 packet_io_for_int!(i16);
 packet_io_for_int!(i32);
 
-impl<'a> PacketIO<'a> for u8 {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
+impl PacketIO<'_> for u8 {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
         core::iter::once(PacketWriteCommand::WriteByte { byte: *self }).collect()
     }
     fn read_all(from: &mut &[u8]) -> Result<Self, PacketReadError> {
@@ -328,8 +341,8 @@ impl Packet {
         match self {
             Packet::NoOp => PacketDiscriminator::NoOp as u8,
             Packet::ResetConsole => PacketDiscriminator::ResetConsole as u8,
-            Packet::RestoreState { .. } => PacketDiscriminator::RestoreState as u8,
-            Packet::RunFrames { frames } => if *frames < PacketDiscriminator::RunFrameVar as UnsignedInteger { *frames as u8 } else { PacketDiscriminator::RunFrameVar as u8 },
+            Packet::LoadSaveState { .. } => PacketDiscriminator::LoadSaveState as u8,
+            Packet::NextFrame { .. } => PacketDiscriminator::NextFrame as u8,
             Packet::WriteMemory { data, .. } => match data.len() {
                 1 => PacketDiscriminator::WriteMemory8 as u8,
                 2 => PacketDiscriminator::WriteMemory16 as u8,
@@ -350,17 +363,17 @@ impl Packet {
     }
 }
 
-impl<'a> PacketIO<'a> for Packet {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut commands = ArrayVec::new();
+impl PacketIO<'_> for Packet {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
+        let mut commands = PacketInstructionsVec::new();
         commands.push(PacketWriteCommand::WriteByte { byte: self.get_discriminator_byte() });
 
         // we can write the payload here
         match self {
             Packet::NoOp | Packet::ResetConsole => (),
             
-            Packet::RunFrames { frames } => if *frames >= (PacketDiscriminator::RunFrameVar as UnsignedInteger) {
-                commands.extend(frames.write_packet_instructions());
+            Packet::NextFrame { timestamp_delta } => {
+                commands.extend(timestamp_delta.write_packet_instructions());
             },
             
             Packet::ChangeInput { data } => {
@@ -386,11 +399,24 @@ impl<'a> PacketIO<'a> for Packet {
                 }
             }
 
-            Packet::CompressedBlob { keyframes, bookmarks, compressed_data, uncompressed_size } => {
+            Packet::CompressedBlob {
+                keyframes,
+                bookmarks,
+                compressed_data,
+                uncompressed_size,
+                timestamp_start,
+                timestamp_end,
+                elapsed_frames_start,
+                elapsed_frames_end
+            } => {
                 commands.extend(keyframes.write_packet_instructions());
                 commands.extend(bookmarks.write_packet_instructions());
                 commands.extend(compressed_data.write_packet_instructions());
                 commands.extend(uncompressed_size.write_packet_instructions());
+                commands.extend(timestamp_start.write_packet_instructions());
+                commands.extend(timestamp_end.write_packet_instructions());
+                commands.extend(elapsed_frames_start.write_packet_instructions());
+                commands.extend(elapsed_frames_end.write_packet_instructions());
             }
 
             Packet::Keyframe { state, metadata } => {
@@ -406,8 +432,8 @@ impl<'a> PacketIO<'a> for Packet {
                 commands.extend(speed.write_packet_instructions());
             },
 
-            Packet::RestoreState { keyframe_frame_index } => {
-                (commands).extend(keyframe_frame_index.write_packet_instructions())
+            Packet::LoadSaveState { state } => {
+                (commands).extend(state.write_packet_instructions())
             }
         }
 
@@ -421,9 +447,6 @@ impl<'a> PacketIO<'a> for Packet {
         }
         else if discriminator_byte == PacketDiscriminator::ResetConsole {
             return Ok(Packet::ResetConsole)
-        }
-        else if discriminator_byte < PacketDiscriminator::RunFrameVar {
-            return Ok(Packet::RunFrames { frames: discriminator_byte as UnsignedInteger })
         }
 
         let Ok(t) = PacketDiscriminator::try_from_primitive(discriminator_byte) else {
@@ -454,9 +477,9 @@ impl<'a> PacketIO<'a> for Packet {
         }
 
         match t {
-            PacketDiscriminator::NoOp | PacketDiscriminator::ResetConsole | PacketDiscriminator::RunFrameN => unreachable!("{t:?} should have already been handled"),
-            PacketDiscriminator::RunFrameVar => Ok(Packet::RunFrames { frames: UnsignedInteger::read_all(from)? }),
-            PacketDiscriminator::RestoreState => Ok(Packet::RestoreState { keyframe_frame_index: UnsignedInteger::read_all(from)? }),
+            PacketDiscriminator::NoOp | PacketDiscriminator::ResetConsole => unreachable!("{t:?} should have already been handled"),
+            PacketDiscriminator::NextFrame => Ok(Packet::NextFrame { timestamp_delta: TimestampMillis::read_all(from)? }),
+            PacketDiscriminator::LoadSaveState => Ok(Packet::LoadSaveState { state: ByteVec::read_all(from)? }),
             PacketDiscriminator::ChangeInput8 => change_input!(u8),
             PacketDiscriminator::ChangeInput16 => change_input!(u16),
             PacketDiscriminator::ChangeInput32 => change_input!(u32),
@@ -468,17 +491,26 @@ impl<'a> PacketIO<'a> for Packet {
             PacketDiscriminator::Keyframe => Ok(Packet::Keyframe { metadata: KeyframeMetadata::read_all(from)?, state: ByteVec::read_all(from)? }),
             PacketDiscriminator::Bookmark => Ok(Packet::Bookmark { metadata: BookmarkMetadata::read_all(from)? }),
             PacketDiscriminator::ChangeSpeed => Ok(Packet::ChangeSpeed { speed: Speed::read_all(from)? }),
-            PacketDiscriminator::CompressedBlob => Ok(Packet::CompressedBlob { keyframes: Vec::read_all(from)?, bookmarks: Vec::read_all(from)?, compressed_data: ByteVec::read_all(from)?, uncompressed_size: UnsignedInteger::read_all(from)? }),
+            PacketDiscriminator::CompressedBlob => Ok(Packet::CompressedBlob {
+                keyframes: Vec::read_all(from)?,
+                bookmarks: Vec::read_all(from)?,
+                compressed_data: ByteVec::read_all(from)?,
+                uncompressed_size: UnsignedInteger::read_all(from)?,
+                timestamp_start: UnsignedInteger::read_all(from)?,
+                timestamp_end: UnsignedInteger::read_all(from)?,
+                elapsed_frames_start: UnsignedInteger::read_all(from)?,
+                elapsed_frames_end: UnsignedInteger::read_all(from)?
+            }),
         }
     }
 }
-impl<'a> PacketIO<'a> for KeyframeMetadata {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut write_commands = ArrayVec::new();
+impl PacketIO<'_> for KeyframeMetadata {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_>{
+        let mut write_commands = PacketInstructionsVec::new();
         write_commands.extend(self.input.write_packet_instructions());
         write_commands.extend(self.speed.write_packet_instructions());
         write_commands.extend(self.elapsed_frames.write_packet_instructions());
-        write_commands.extend(self.elapsed_emulator_ticks_over_256.write_packet_instructions());
+        write_commands.extend(self.elapsed_millis.write_packet_instructions());
         write_commands
     }
 
@@ -487,42 +519,44 @@ impl<'a> PacketIO<'a> for KeyframeMetadata {
             input: InputBuffer::read_all(from)?,
             speed: Speed::read_all(from)?,
             elapsed_frames: UnsignedInteger::read_all(from)?,
-            elapsed_emulator_ticks_over_256: UnsignedInteger::read_all(from)?,
+            elapsed_millis: UnsignedInteger::read_all(from)?,
         })
     }
 }
-impl<'a> PacketIO<'a> for Speed {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
+impl PacketIO<'_> for Speed {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
         self.speed_over_256.write_packet_instructions()
     }
 
-    fn read_all(from: &mut &'a[u8]) -> Result<Self, PacketReadError> {
+    fn read_all(from: &mut &[u8]) -> Result<Self, PacketReadError> {
         Ok(Self { speed_over_256: NonZeroU16::read_all(from)? })
     }
 }
 
-impl<'a> PacketIO<'a> for NonZeroU16 {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
+impl PacketIO<'_> for NonZeroU16 {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
         static_packet_write_array_references(self.get().write_packet_instructions())
     }
 
-    fn read_all(from: &mut &'a [u8]) -> Result<Self, PacketReadError> {
+    fn read_all(from: &mut &[u8]) -> Result<Self, PacketReadError> {
         Self::new(u16::read_all(from)?).ok_or_else(|| PacketReadError::ParseFail { explanation: Cow::Borrowed("read a zero u16 when NonZeroU16 was expected") })
     }
 }
 
-impl<'a> PacketIO<'a> for BookmarkMetadata {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut instructions = ArrayVec::new();
+impl PacketIO<'_> for BookmarkMetadata {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
+        let mut instructions = PacketInstructionsVec::new();
         instructions.extend(self.name.write_packet_instructions());
         instructions.extend(self.elapsed_frames.write_packet_instructions());
+        instructions.extend(self.elapsed_millis.write_packet_instructions());
         instructions
     }
 
-    fn read_all(from: &mut &'a[u8]) -> Result<Self, PacketReadError> {
+    fn read_all(from: &mut &[u8]) -> Result<Self, PacketReadError> {
         Ok(Self {
             name: String::read_all(from)?,
             elapsed_frames: UnsignedInteger::read_all(from)?,
+            elapsed_millis: TimestampMillis::read_all(from)?,
         })
     }
 }

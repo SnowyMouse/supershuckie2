@@ -1,0 +1,12 @@
+[package]
+name = "supershuckie-frontend-c"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+supershuckie-frontend = { workspace = true }
+supershuckie-core = { workspace = true }

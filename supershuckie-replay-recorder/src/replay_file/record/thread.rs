@@ -1,5 +1,5 @@
 use super::{ReplayFileWriteError, ReplayFileRecorder, ReplayFileSink, ReplayFileRecorderFns};
-use crate::{ByteVec, InputBuffer, Speed, UnsignedInteger};
+use crate::{ByteVec, InputBuffer, Speed, TimestampMillis, UnsignedInteger};
 use alloc::borrow::ToOwned;
 use alloc::string::String;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -81,8 +81,8 @@ impl<Final: ReplayFileSink + Send + 'static, Temp: ReplayFileSink + Send + 'stat
     }
 
     /// Advance a new frame.
-    pub fn next_frame(&mut self) {
-        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::NextFrame);
+    pub fn next_frame(&mut self, timestamp: TimestampMillis) {
+        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::NextFrame { timestamp });
     }
 
     /// Add a bookmark.
@@ -91,8 +91,8 @@ impl<Final: ReplayFileSink + Send + 'static, Temp: ReplayFileSink + Send + 'stat
     }
 
     /// Add a new keyframe.
-    pub fn insert_keyframe(&mut self, state: ByteVec, emulator_ticks_over_256: UnsignedInteger) {
-        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::NewKeyframe { state, emulator_ticks_over_256 });
+    pub fn insert_keyframe(&mut self, state: ByteVec, timestamp: TimestampMillis) {
+        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::NewKeyframe { state, timestamp });
     }
 
     /// Set the current input.
@@ -116,8 +116,8 @@ impl<Final: ReplayFileSink + Send + 'static, Temp: ReplayFileSink + Send + 'stat
     }
 
     /// Load the keyframe at the given frame index.
-    pub fn restore_state(&mut self, keyframe_frame_index: u64) {
-        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::RestoreState { keyframe_frame_index });
+    pub fn load_save_state(&mut self, state: ByteVec) {
+        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::LoadSaveState { state });
     }
 
     /// Check for errors, if any.
@@ -169,10 +169,10 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ThreadedReplayFileRecorderThre
             ThreadedReplayFileRecorderCommand::WriteMemory { address, data } => {
                 recorder.write_memory(address, data)
             },
-            ThreadedReplayFileRecorderCommand::NewKeyframe { emulator_ticks_over_256, state } => {
-                let _ = recorder.insert_keyframe(state, emulator_ticks_over_256)?;
+            ThreadedReplayFileRecorderCommand::NewKeyframe { timestamp, state } => {
+                let _ = recorder.insert_keyframe(state, timestamp)?;
                 Ok(())
-            },
+            }
             ThreadedReplayFileRecorderCommand::SetInput { input } => {
                 recorder.set_input(input)
             },
@@ -185,25 +185,24 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ThreadedReplayFileRecorderThre
             ThreadedReplayFileRecorderCommand::ResetConsole => {
                 recorder.reset_console()
             },
-            ThreadedReplayFileRecorderCommand::NextFrame => {
-                recorder.next_frame();
-                Ok(())
+            ThreadedReplayFileRecorderCommand::NextFrame { timestamp } => {
+                recorder.next_frame(timestamp)
             },
-            ThreadedReplayFileRecorderCommand::RestoreState { keyframe_frame_index } => {
-                recorder.restore_state(keyframe_frame_index)
+            ThreadedReplayFileRecorderCommand::LoadSaveState { state } => {
+                recorder.load_save_state(state)
             }
         }
     }
 }
 
 enum ThreadedReplayFileRecorderCommand {
-    NextFrame,
+    NextFrame { timestamp: TimestampMillis },
     AddBookmark { bookmark: String },
-    NewKeyframe { state: ByteVec, emulator_ticks_over_256: UnsignedInteger },
+    NewKeyframe { state: ByteVec, timestamp: UnsignedInteger },
     SetInput { input: InputBuffer },
     SetSpeed { speed: Speed },
     WriteMemory { address: UnsignedInteger, data: ByteVec },
-    RestoreState { keyframe_frame_index: UnsignedInteger },
+    LoadSaveState { state: ByteVec },
     ResetConsole,
     Close
 }
@@ -226,8 +225,9 @@ impl<Final: ReplayFileSink + Sync + Send + 'static, Temp: ReplayFileSink + Sync 
     }
 
     #[inline]
-    fn next_frame(&mut self) {
-        self.next_frame()
+    fn next_frame(&mut self, timestamp_millis: TimestampMillis) -> Result<(), ReplayFileWriteError> {
+        self.next_frame(timestamp_millis);
+        Ok(())
     }
 
     #[inline]
@@ -237,8 +237,8 @@ impl<Final: ReplayFileSink + Sync + Send + 'static, Temp: ReplayFileSink + Sync 
     }
 
     #[inline]
-    fn insert_keyframe(&mut self, state: ByteVec, elapsed_ticks_over_256: UnsignedInteger) -> Result<(), ReplayFileWriteError> {
-        self.insert_keyframe(state, elapsed_ticks_over_256);
+    fn insert_keyframe(&mut self, state: ByteVec, timestamp: TimestampMillis) -> Result<(), ReplayFileWriteError> {
+        self.insert_keyframe(state, timestamp);
         Ok(())
     }
 
@@ -267,8 +267,8 @@ impl<Final: ReplayFileSink + Sync + Send + 'static, Temp: ReplayFileSink + Sync 
     }
 
     #[inline]
-    fn restore_state(&mut self, keyframe_frame_index: u64) -> Result<(), ReplayFileWriteError> {
-        self.restore_state(keyframe_frame_index);
+    fn load_save_state(&mut self, state: ByteVec) -> Result<(), ReplayFileWriteError> {
+        self.load_save_state(state);
         Ok(())
     }
 }

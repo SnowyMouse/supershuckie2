@@ -1,22 +1,32 @@
-use crate::emulator::{EmulatorCore, Input, ScreenData};
-use crate::SuperShuckieCore;
+use crate::emulator::{EmulatorCore, Input, PartialReplayRecordMetadata, ScreenData};
+use crate::{std_timestamp_provider, ReplayPlayerAttachError, Speed};
+use crate::{SuperShuckieCore, SuperShuckieRapidFire};
+use std::borrow::ToOwned;
 use std::boxed::Box;
-use std::sync::mpsc::{Receiver, Sender};
+use std::fs::File;
+use std::string::String;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex, TryLockError, Weak};
 use std::time::Duration;
 use std::vec::Vec;
-use std::borrow::ToOwned;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::format;
 #[cfg(feature = "pokeabyte")]
 use supershuckie_pokeabyte_integration::PokeAByteIntegrationServer;
-use supershuckie_replay_recorder::replay_file::record::ReplayFileRecorderFns;
+use supershuckie_replay_recorder::replay_file::playback::ReplayFilePlayer;
+use supershuckie_replay_recorder::UnsignedInteger;
 
-/// A non-blocking, threaded wrapper for [`SuperShuckieCore`].
+/// A (mostly) non-blocking, threaded wrapper for [`SuperShuckieCore`].
 pub struct ThreadedSuperShuckieCore {
     screens: Arc<Mutex<Vec<ScreenData>>>,
     sender: Sender<ThreadCommand>,
+    receiver_close: Receiver<()>,
+
     frame_count: Arc<AtomicU32>,
-    receiver_close: Receiver<()>
+    elapsed_milliseconds: Arc<AtomicU32>,
+
+    playback_total_frames: UnsignedInteger,
+    playback_total_milliseconds: UnsignedInteger,
 }
 
 impl ThreadedSuperShuckieCore {
@@ -24,23 +34,29 @@ impl ThreadedSuperShuckieCore {
     pub fn new(emulator_core: Box<dyn EmulatorCore>) -> Self {
         let frame_count = Arc::new(AtomicU32::new(0));
         let screens = Arc::new(Mutex::new(emulator_core.get_screens().to_vec()));
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let (sender_close, receiver_close) = std::sync::mpsc::channel();
+        let (sender, receiver) = channel();
+        let (sender_close, receiver_close) = channel();
+
+        let replay_milliseconds = Arc::new(AtomicU32::new(0));
+        let playback_total_frames = 0;
+        let playback_total_milliseconds = 0;
 
         {
             let frame_count = frame_count.clone();
             let screens = Arc::downgrade(&screens);
+            let replay_milliseconds = replay_milliseconds.clone();
             let _ = std::thread::Builder::new().name("ThreadedSuperShuckieCore".to_owned()).spawn(move || {
                 ThreadedSuperShuckieCoreThread {
                     screens,
                     screens_queued: emulator_core.get_screens().to_vec(),
                     screen_ready_for_copy: false,
                     is_running: false,
-                    core: SuperShuckieCore::new(emulator_core),
-                    integration: None,
+                    core: SuperShuckieCore::new(emulator_core, std_timestamp_provider()),
+                    pokeabyte_integration: None,
                     receiver,
                     sender_close,
-                    frame_count
+                    frame_count,
+                    replay_milliseconds
                 }.run_thread();
             });
         }
@@ -49,7 +65,10 @@ impl ThreadedSuperShuckieCore {
             sender,
             screens,
             receiver_close,
-            frame_count
+            frame_count,
+            elapsed_milliseconds: replay_milliseconds,
+            playback_total_frames,
+            playback_total_milliseconds
         }
     }
 
@@ -57,7 +76,7 @@ impl ThreadedSuperShuckieCore {
     ///
     /// This can be called to ensure that a unique frame is ready to be read. Note, however, that
     /// this number may be slightly outdated.
-    pub fn get_frame_count(&self) -> u32 {
+    pub fn get_elapsed_frames(&self) -> u32 {
         self.frame_count.load(Ordering::Relaxed)
     }
 
@@ -72,32 +91,151 @@ impl ThreadedSuperShuckieCore {
 
     /// Start running continuously.
     pub fn start(&self) {
-        let _ = self.sender.send(ThreadCommand::Start)
+        self.sender.send(ThreadCommand::Start)
             .expect("Start - the core thread has crashed");
     }
 
     /// Pause running.
     pub fn pause(&self) {
-        let _ = self.sender.send(ThreadCommand::Pause)
+        self.sender.send(ThreadCommand::Pause)
             .expect("Pause - the core thread has crashed");
     }
 
-    /// Attach a Poke-A-Byte integration server.
-    pub fn attach_pokeabyte_server(&self, integration: Option<PokeAByteIntegrationServer>) {
-        let _ = self.sender.send(ThreadCommand::AttachPokeAByteIntegration(integration))
-            .expect("AttachPokeAByteIntegration - the core thread has crashed");
+    /// Attach/detach a Poke-A-Byte integration server.
+    pub fn set_pokeabyte_enabled(&self, enabled: bool) -> Result<(), String> {
+        let (sender, receiver) = channel();
+
+        self.sender.send(ThreadCommand::SetPokeAByteEnabled(enabled, sender))
+            .expect("SetPokeAByteEnabled - the core thread has crashed");
+
+        receiver.recv().ok().unwrap_or(Ok(()))
     }
 
-    /// Attach a replay file recorder.
-    pub fn attach_file_recorder(&self, recorder: Option<Box<dyn ReplayFileRecorderFns>>) {
-        let _ = self.sender.send(ThreadCommand::AttachReplayFileRecorder(recorder))
-            .expect("AttachPokeAByteIntegration - the core thread has crashed");
+    /// Stop recording replay.
+    pub fn start_recording_replay(&self, metadata: PartialReplayRecordMetadata<File, File>) {
+        self.sender.send(ThreadCommand::StartRecordingReplay(metadata))
+            .expect("StopRecordingReplay - the core thread has crashed");
+    }
+
+    /// Stop recording replay.
+    pub fn stop_recording_replay(&self) -> bool {
+        let (sender, receiver) = channel();
+
+        self.sender.send(ThreadCommand::StopRecordingReplay(sender))
+            .expect("StopRecordingReplay - the core thread has crashed");
+
+        receiver.recv().ok().unwrap_or(false)
     }
 
     /// Enqueue an input.
     pub fn enqueue_input(&self, input: Input) {
-        let _ = self.sender.send(ThreadCommand::EnqueueInput(input))
+        self.sender.send(ThreadCommand::EnqueueInput(input))
             .expect("EnqueueInput - the core thread has crashed");
+    }
+
+    /// Set the speed.
+    pub fn set_speed(&self, speed: Speed) {
+        self.sender.send(ThreadCommand::SetSpeed(speed))
+            .expect("SetSpeed - the core thread has crashed");
+    }
+
+    /// Set the speed.
+    pub fn hard_reset(&self) {
+        self.sender.send(ThreadCommand::HardReset)
+            .expect("HardReset - the core thread has crashed");
+    }
+
+    /// Set the rapid fire input.
+    pub fn set_rapid_fire_input(&self, input: Option<SuperShuckieRapidFire>) {
+        self.sender.send(ThreadCommand::SetRapidFireInput(input))
+            .expect("SetRapidFireInput - the core thread has crashed");
+    }
+
+    /// Set the toggle input.
+    pub fn set_toggled_input(&self, input: Option<Input>) {
+        self.sender.send(ThreadCommand::SetToggledInput(input))
+            .expect("SetToggledInput - the core thread has crashed");
+    }
+
+    /// Create a save state.
+    ///
+    /// Returns `None` if no save state could be created for some unknown reason.
+    ///
+    /// NOTE: This is blocking.
+    pub fn create_save_state(&self) -> Option<Vec<u8>> {
+        let (sender, receiver) = channel();
+        self.sender.send(ThreadCommand::CreateSaveState(sender))
+            .expect("CreateSaveState - the core thread has crashed");
+        receiver.recv().ok()
+    }
+
+    /// Load a save state.
+    pub fn load_save_state(&self, state: Vec<u8>) {
+        self.sender.send(ThreadCommand::LoadSaveState(state))
+            .expect("LoadSaveState - the core thread has crashed");
+    }
+
+    /// Get SRAM.
+    ///
+    /// Returns `None` if SRAM could not be read for some unknown reason.
+    ///
+    /// NOTE: This is blocking.
+    pub fn get_sram(&self) -> Option<Vec<u8>> {
+        let (sender, receiver) = channel();
+        self.sender.send(ThreadCommand::SaveSRAM(sender))
+            .expect("SaveSRAM - the core thread has crashed");
+        receiver.recv().ok()
+    }
+
+    /// Get the number of milliseconds a replay has been recorded.
+    #[inline]
+    pub fn get_elapsed_milliseconds(&self) -> u32 {
+        self.elapsed_milliseconds.load(Ordering::Relaxed)
+    }
+
+    /// Get the total number of frames in the current playback.
+    #[inline]
+    pub fn get_playback_total_frames(&self) -> u32 {
+        self.playback_total_frames as u32
+    }
+
+    /// Get the total number of frames in the current playback.
+    #[inline]
+    pub fn get_playback_total_milliseconds(&self) -> u32 {
+        self.playback_total_milliseconds as u32
+    }
+
+    /// Load the replay.
+    pub fn attach_replay_player(&mut self, mut player: ReplayFilePlayer, allow_mismatch: bool) -> Result<(), ReplayPlayerAttachError> {
+        player.enable_threading();
+
+        let total_ticks = player.get_total_milliseconds();
+        let total_frames = player.get_total_frames();
+
+        let (sender, receiver) = channel();
+
+        self.sender.send(ThreadCommand::AttachReplayPlayer {
+            player,
+            allow_mismatched: allow_mismatch,
+            errors: sender
+        }).expect("AttachReplayPlayer - the core thread has crashed");
+
+        match receiver.recv() {
+            Err(_) => {
+                self.playback_total_frames = total_frames;
+                self.playback_total_milliseconds = total_ticks;
+                Ok(())
+            },
+            Ok(n) => Err(n)
+        }
+    }
+
+    /// Detach a replay
+    pub fn detach_replay_player(&mut self) {
+        self.playback_total_frames = 0;
+        self.playback_total_milliseconds = 0;
+        self.sender.send(ThreadCommand::DetachReplayPlayer)
+            .expect("DetachReplayPlayer - the core thread has crashed")
     }
 }
 
@@ -115,9 +253,23 @@ impl Drop for ThreadedSuperShuckieCore {
 enum ThreadCommand {
     Start,
     Pause,
-    AttachPokeAByteIntegration(Option<PokeAByteIntegrationServer>),
-    AttachReplayFileRecorder(Option<Box<dyn ReplayFileRecorderFns>>),
+    SetPokeAByteEnabled(bool, Sender<Result<(), String>>),
+    StartRecordingReplay(PartialReplayRecordMetadata<File, File>),
+    StopRecordingReplay(Sender<bool>),
+    AttachReplayPlayer {
+        player: ReplayFilePlayer,
+        allow_mismatched: bool,
+        errors: Sender<ReplayPlayerAttachError>
+    },
+    DetachReplayPlayer,
     EnqueueInput(Input),
+    SetRapidFireInput(Option<SuperShuckieRapidFire>),
+    SetToggledInput(Option<Input>),
+    SetSpeed(Speed),
+    HardReset,
+    CreateSaveState(Sender<Vec<u8>>),
+    LoadSaveState(Vec<u8>),
+    SaveSRAM(Sender<Vec<u8>>),
     Close
 }
 
@@ -127,11 +279,12 @@ struct ThreadedSuperShuckieCoreThread {
     screens_queued: Vec<ScreenData>,
     screen_ready_for_copy: bool,
     frame_count: Arc<AtomicU32>,
+    replay_milliseconds: Arc<AtomicU32>,
 
     core: SuperShuckieCore,
     receiver: Receiver<ThreadCommand>,
     is_running: bool,
-    integration: Option<PokeAByteIntegrationServer>,
+    pokeabyte_integration: Option<PokeAByteIntegrationServer>,
     sender_close: Sender<()>
 }
 
@@ -150,6 +303,7 @@ impl ThreadedSuperShuckieCoreThread {
             self.refresh_screen_data(false);
             self.update_queued_screens();
             self.handle_pokeabyte_integration();
+            self.replay_milliseconds.store(self.core.get_recording_milliseconds() as u32, Ordering::Relaxed);
 
             if self.is_running {
                 self.core.run();
@@ -161,8 +315,8 @@ impl ThreadedSuperShuckieCoreThread {
             }
         }
 
-        self.core.attach_replay_file_recorder(None);
-        self.integration = None;
+        self.core.stop_recording_replay();
+        self.pokeabyte_integration = None;
 
         let _ = self.sender_close.send(());
     }
@@ -185,10 +339,8 @@ impl ThreadedSuperShuckieCoreThread {
 
         self.screen_ready_for_copy = false;
 
-        let in_screens = &self.screens_queued;
-        for (in_screen, out_screen) in in_screens.iter().zip(out_screens.iter_mut()) {
-            out_screen.pixels.copy_from_slice(in_screen.pixels.as_slice());
-        }
+        let in_screens = &mut self.screens_queued;
+        core::mem::swap(in_screens, &mut *out_screens);
 
         self.frame_count.store(self.core.total_frames as u32, Ordering::Relaxed);
     }
@@ -220,21 +372,12 @@ impl ThreadedSuperShuckieCoreThread {
             Err(e) => panic!("refresh_screen_data Can't get screens mutex: {e}")
         };
 
-        let in_screens = self.core.core.get_screens();
-        debug_assert_eq!(out_screens_result.len(), in_screens.len(), "Screen count has changed!");
-
-        for (in_screen, out_screen) in in_screens.iter().zip(out_screens_result.iter_mut()) {
-            debug_assert_eq!(in_screen.width, out_screen.width, "Screen width has changed!");
-            debug_assert_eq!(in_screen.height, out_screen.height, "Screen height has changed!");
-            debug_assert_eq!(in_screen.pixels.len(), out_screen.pixels.len(), "Screen pixel count has changed!");
-            debug_assert_eq!(in_screen.encoding, out_screen.encoding, "Screen pixel encoding has changed!");
-            out_screen.pixels.copy_from_slice(in_screen.pixels.as_slice());
-        }
+        self.core.core.swap_screen_data(out_screens_result.as_mut_slice());
     }
 
     /// Update RAM read/writes
     fn handle_pokeabyte_integration(&mut self) {
-        let Some(integration) = self.integration.as_ref() else {
+        let Some(integration) = self.pokeabyte_integration.as_ref() else {
             return
         };
 
@@ -268,22 +411,86 @@ impl ThreadedSuperShuckieCoreThread {
     fn handle_command(&mut self, command: ThreadCommand) {
         match command {
             ThreadCommand::Start => {
-                self.is_running = true;
+                if !self.is_running {
+                    self.is_running = true;
+                    self.core.unpause_timer();
+                }
             }
             ThreadCommand::Pause => {
-                self.is_running = false;
+                if self.is_running {
+                    self.is_running = false;
+                    self.core.pause_timer();
+                }
             }
-            ThreadCommand::AttachPokeAByteIntegration(integration) => {
-                self.integration = integration;
+            ThreadCommand::SetPokeAByteEnabled(enabled, err) => {
+                if !enabled && self.pokeabyte_integration.is_some() {
+                    self.pokeabyte_integration = None;
+                    let _ = err.send(Ok(()));
+                }
+                else if enabled {
+                    let integration = match PokeAByteIntegrationServer::begin_listen() {
+                        Ok(n) => {
+                            let _ = err.send(Ok(()));
+                            n
+                        },
+                        Err(e) => {
+                            let _ = err.send(Err(format!("{e:?}")));
+                            return
+                        }
+                    };
+                    self.pokeabyte_integration = Some(integration)
+                } else {
+                    let _ = err.send(Ok(()));
+                }
             }
-            ThreadCommand::AttachReplayFileRecorder(recorder) => {
-                self.core.attach_replay_file_recorder(recorder);
+            ThreadCommand::StartRecordingReplay(metadata) => {
+                // FIXME: error if this fails
+                self.core.start_recording_replay(metadata).expect("FAILED TO START RECORDING REPLAY OH NO");
+                if !self.is_running {
+                    self.core.pause_timer();
+                }
+            }
+            ThreadCommand::StopRecordingReplay(sender) => {
+                let _ = sender.send(self.core.stop_recording_replay() == Some(true));
             }
             ThreadCommand::EnqueueInput(input) => {
                 self.core.enqueue_input(input);
             }
+            ThreadCommand::SetSpeed(speed) => {
+                self.core.set_speed(speed);
+            }
+            ThreadCommand::SetRapidFireInput(input) => {
+                self.core.set_rapid_fire_input(input);
+            }
+            ThreadCommand::SetToggledInput(input) => {
+                self.core.set_toggled_input(input);
+            }
+            ThreadCommand::HardReset => {
+                self.core.hard_reset();
+            }
+            ThreadCommand::CreateSaveState(sender) => {
+                self.core.finish_current_frame();
+                let _ = sender.send(self.core.create_save_state());
+            }
+            ThreadCommand::LoadSaveState(state) => {
+                self.core.load_save_state(&state);
+            }
+            ThreadCommand::SaveSRAM(sender) => {
+                let _ = sender.send(self.core.save_sram());
+            }
             ThreadCommand::Close => {
                 unreachable!("handle_command(ThreadCommand::Close) should not happen")
+            },
+            ThreadCommand::AttachReplayPlayer { player, allow_mismatched, errors } => {
+                if let Err(e) = self.core.attach_replay_player(player, allow_mismatched) {
+                    let _ = errors.send(e);
+                }
+                if !self.is_running {
+                    self.core.pause_timer();
+                }
+            }
+            ThreadCommand::DetachReplayPlayer => {
+                self.core.detach_replay_player();
             }
         }
     }

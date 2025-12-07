@@ -8,7 +8,10 @@ use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 use safeboy::rgb_encoder::encode_a8r8g8b8;
-use safeboy::{DirectAccessRegion, Gameboy, GameboyCallbacks, InputButton, Model, RunnableInstanceFunctions, RunningGameboy, TurboMode, VBlankType};
+use safeboy::{DirectAccessRegion, Gameboy, GameboyCallbacks, InputButton, RtcMode, RunnableInstanceFunctions, RunningGameboy, TurboMode, VBlankType};
+pub use safeboy::Model;
+use supershuckie_replay_recorder::blake3_hash;
+use supershuckie_replay_recorder::replay_file::{ReplayConsoleType, ReplayHeaderBlake3Hash};
 
 /// Game Boy and Game Boy Color emulator.
 ///
@@ -16,7 +19,10 @@ use safeboy::{DirectAccessRegion, Gameboy, GameboyCallbacks, InputButton, Model,
 pub struct GameBoyColor {
     core: Gameboy,
     turbo_mode: TurboMode,
-    callback_data: Arc<GameBoyCallbackData>
+    callback_data: Arc<GameBoyCallbackData>,
+
+    rom_checksum: ReplayHeaderBlake3Hash,
+    bios_checksum: ReplayHeaderBlake3Hash,
 }
 
 struct GameBoyCallbackData {
@@ -39,6 +45,7 @@ impl GameBoyColor {
         core.load_rom(rom);
         core.set_rgb_encoder(encode_a8r8g8b8);
         core.set_rendering_enabled(true);
+        core.set_rtc_mode(RtcMode::Accurate);
 
         let dimensions = core.get_pixel_buffer();
         let screen_data = ScreenData {
@@ -58,7 +65,9 @@ impl GameBoyColor {
         Self {
             turbo_mode: TurboMode::Disabled,
             callback_data,
-            core
+            core,
+            rom_checksum: blake3_hash(rom),
+            bios_checksum: blake3_hash(bios),
         }
     }
 }
@@ -99,9 +108,9 @@ fn pokeabyte_protocol_region_from_address(address: u32) -> Option<(DirectAccessR
 
 impl EmulatorCore for GameBoyColor {
     fn run(&mut self) -> RunTime {
-        let ticks = self.core.run() as u64;
+        self.core.run();
         let frames = self.callback_data.run_frames.swap(0, Ordering::Relaxed) as u64;
-        RunTime { ticks, frames }
+        RunTime { frames }
     }
 
     fn run_unlocked(&mut self) -> RunTime {
@@ -140,11 +149,6 @@ impl EmulatorCore for GameBoyColor {
         };
         data.copy_from_slice(from);
         Ok(())
-    }
-
-    #[inline]
-    fn ticks_per_second(&self) -> f64 {
-        (8 * 1024 * 1024) as f64
     }
 
     #[inline]
@@ -193,5 +197,44 @@ impl EmulatorCore for GameBoyColor {
         //         we have to mutably borrow again, the borrow will end.
         let screen_data = unsafe { &*self.callback_data.screen.get() };
         core::slice::from_ref(screen_data)
+    }
+
+    #[inline]
+    fn swap_screen_data(&mut self, screens: &mut [ScreenData]) {
+        assert_eq!(screens.len(), 1, "Invalid screen count");
+        let first_screen = &mut screens[0];
+
+        // SAFETY: This won't leave this function.
+        let screen_data = unsafe { &mut *self.callback_data.screen.get() };
+
+        assert_eq!(first_screen.pixels.len(), screen_data.pixels.len());
+        core::mem::swap(&mut first_screen.pixels, &mut screen_data.pixels);
+    }
+
+    #[inline]
+    fn hard_reset(&mut self) {
+        self.core.reset();
+    }
+
+    fn replay_console_type(&self) -> Option<ReplayConsoleType> {
+        match self.core.is_cgb() {
+            true => Some(ReplayConsoleType::GameBoyColor),
+            false => Some(ReplayConsoleType::GameBoy)
+        }
+    }
+
+    #[inline]
+    fn rom_checksum(&self) -> &ReplayHeaderBlake3Hash {
+        &self.rom_checksum
+    }
+
+    #[inline]
+    fn bios_checksum(&self) -> &ReplayHeaderBlake3Hash {
+        &self.bios_checksum
+    }
+
+    #[inline]
+    fn core_name(&self) -> &'static str {
+        safeboy::GB_VERSION
     }
 }

@@ -154,7 +154,7 @@ impl<'a> PokeAByteProtocolRequestPacket<'a> {
                 let address = LittleEndian::read_u64(&bytes[0x8..]);
                 let length: usize = LittleEndian::read_u32(&bytes[0x10..]) as usize;
 
-                let Some(data) = bytes.get(0x10..) else {
+                let Some(data) = bytes.get(0x20..) else {
                     return Err(PokeAByteError::BadPacketFromClient { explanation: Cow::Borrowed("failed to read data: no bytes after length") })
                 };
 

@@ -19,8 +19,8 @@ pub struct PokeAByteWrite {
 }
 
 pub struct PokeAByteIntegrationServer {
-    socket: UdpSocket,
-    session: Arc<Mutex<Option<PokeAByteSession>>>
+    session: Arc<Mutex<Option<PokeAByteSession>>>,
+    server_close_notifier: Mutex<Receiver<()>>
 }
 
 /// All session-related data from Poke-A-Byte.
@@ -64,24 +64,34 @@ pub struct PokeAByteSetup {
     _cant_let_you_instantiate_that_stair_fax: ()
 }
 
+impl Drop for PokeAByteIntegrationServer {
+    fn drop(&mut self) {
+        self.session = Arc::new(Mutex::new(None));
+        let _ = self.server_close_notifier.lock().and_then(|i| Ok(i.recv()));
+    }
+}
+
 impl PokeAByteIntegrationServer {
     /// Begin listening.
-    pub fn begin_listen() -> Result<Arc<Self>, PokeAByteError> {
+    pub fn begin_listen() -> Result<Self, PokeAByteError> {
         let socket = UdpSocket::bind(&POKEABYTE_UDP)
             .map_err(|e| PokeAByteError::SocketFailure { explanation: Cow::Owned(format!("Failed to bind: {e:?}")) })?;
 
-        let _ = socket.set_read_timeout(Some(Duration::from_secs(1)));
-        let _ = socket.set_write_timeout(Some(Duration::from_secs(1)));
+        let _ = socket.set_read_timeout(Some(Duration::from_millis(500)));
+        let _ = socket.set_write_timeout(Some(Duration::from_millis(500)));
 
-        let this = Arc::new(Self {
-            socket,
-            session: Arc::new(Mutex::new(None))
-        });
+        let (sender, receiver) = channel();
 
-        let this_downgraded = Arc::downgrade(&this);
+        let session = Arc::new(Mutex::new(None));
+        let session_downgraded = Arc::downgrade(&session);
+
+        let this = Self {
+            session,
+            server_close_notifier: Mutex::new(receiver)
+        };
 
         let _ = std::thread::Builder::new().name("PokeAByteIntegrationServer".to_owned()).spawn(move || {
-            PokeAByteIntegrationServer::thread(this_downgraded)
+            PokeAByteIntegrationServer::thread(session_downgraded, socket, sender)
         });
 
         Ok(this)
@@ -92,17 +102,19 @@ impl PokeAByteIntegrationServer {
         self.session.lock().expect("could not get session???")
     }
 
-    fn thread(this: Weak<PokeAByteIntegrationServer>) {
+    fn thread(session: Weak<Mutex<Option<PokeAByteSession>>>, socket: UdpSocket, close_notifier: Sender<()>) {
         let mut buffer = vec![0u8; 65536];
 
         let mut writer: Option<Sender<PokeAByteWrite>> = None;
 
         loop {
-            let Some(promotion) = this.upgrade() else {
+            let Some(promotion) = session.upgrade() else {
+                drop(socket);
+                let _ = close_notifier.send(());
                 return
             };
 
-            let Ok((len, addr)) = promotion.socket.recv_from(&mut buffer) else {
+            let Ok((len, addr)) = socket.recv_from(&mut buffer) else {
                 continue
             };
 
@@ -120,7 +132,7 @@ impl PokeAByteIntegrationServer {
 
             match packet {
                 PokeAByteProtocolRequestPacket::Ping => {
-                    let _ = promotion.socket.send_to(&MetadataHeader::new_response(Instruction::Ping).into_bytes(), addr);
+                    let _ = socket.send_to(&MetadataHeader::new_response(Instruction::Ping).into_bytes(), addr);
                 },
                 PokeAByteProtocolRequestPacket::NoOp => {},
                 PokeAByteProtocolRequestPacket::Close => {
@@ -133,7 +145,7 @@ impl PokeAByteIntegrationServer {
                         .max()
                         .unwrap_or(0);
 
-                    let mut session = promotion.session.lock().expect("Failed to lock: crash?");
+                    let mut session = promotion.lock().expect("Failed to lock: crash?");
                     *session = None; // For cleaning up the old SHM and clearing the file descriptor.
 
                     // Safety: We're going to zero-initialize this before we use it.
@@ -147,7 +159,7 @@ impl PokeAByteIntegrationServer {
 
                     // let Poke-A-Byte know that we're open for business, since zero initialization
                     // is not instant (though it'll probably still be quick)
-                    let _ = promotion.socket.send_to(&MetadataHeader::new_response(Instruction::Setup).into_bytes(), addr);
+                    let _ = socket.send_to(&MetadataHeader::new_response(Instruction::Setup).into_bytes(), addr);
 
                     // Zero-initialize
                     unsafe { shared_memory.get_memory_mut() }.fill(0);

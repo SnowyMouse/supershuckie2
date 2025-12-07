@@ -3,20 +3,25 @@
 #![warn(missing_docs)]
 
 extern crate alloc;
-
 #[cfg(feature = "std")]
 extern crate std;
 
-use crate::emulator::{EmulatorCore, Input, RunTime};
+use crate::emulator::{EmulatorCore, Input, PartialReplayRecordMetadata, RunTime};
+use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
-use alloc::sync::Arc;
+use alloc::format;
+use alloc::string::String;
 use alloc::vec::Vec;
-use core::sync::atomic::{Ordering, AtomicU32};
+use core::fmt::{Display, Formatter};
 use core::num::NonZeroU64;
-use supershuckie_replay_recorder::replay_file::record::ReplayFileRecorderFns;
-use supershuckie_replay_recorder::{ByteVec, Speed, UnsignedInteger};
+use supershuckie_replay_recorder::replay_file::playback::{ReplayFilePlayer, ReplaySeekError};
+use supershuckie_replay_recorder::replay_file::record::{NonBlockingReplayFileRecorder, ReplayFileRecorder, ReplayFileRecorderFns, ReplayFileSink, ReplayFileWriteError};
+use supershuckie_replay_recorder::replay_file::{blake3_hash_to_ascii, ReplayFileMetadata, ReplayHeaderBlake3Hash, ReplayPatchFormat};
+use supershuckie_replay_recorder::{ByteVec, Packet, TimestampMillis, UnsignedInteger};
 
 pub mod emulator;
+
+pub use supershuckie_replay_recorder::Speed;
 
 #[cfg(feature = "std")]
 mod thread;
@@ -24,12 +29,13 @@ mod thread;
 #[cfg(feature = "std")]
 pub use thread::*;
 
-// TODO: We should also have a way to playback replays, immediately ceasing once an input is given.
-
 /// Wrapper for [`EmulatorCore`] that provides useful desktop emulator functionality.
 pub struct SuperShuckieCore {
     core: Box<dyn EmulatorCore>,
     replay_file_recorder: Option<Box<dyn ReplayFileRecorderFns>>,
+    timestamp_provider: Box<dyn MonotonicTimestampProvider>,
+
+    replay_player: Option<ReplayFilePlayer>,
 
     /// The current user-defined input.
     base_input: Input,
@@ -53,19 +59,20 @@ pub struct SuperShuckieCore {
     /// The "total" input that was actually applied.
     current_input: Input,
 
+    replay_frames_delay: UnsignedInteger,
+
     mid_frame: bool,
+    replay_stalled: bool,
 
     input_scratch_buffer: Vec<u8>,
-    milliseconds: Arc<AtomicU32>,
-
+    starting_milliseconds: TimestampMillis,
+    total_milliseconds: TimestampMillis,
+    paused_timer_at: Option<TimestampMillis>,
     game_speed: Speed,
-    ticks_per_second: f64,
-
-    ticks_over_256: u64,
 
     frames_since_last_keyframe: u64,
     frames_per_keyframe: u64,
-    total_frames: u64
+    total_frames: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -110,7 +117,7 @@ impl Default for SuperShuckieRapidFire {
 
 impl SuperShuckieCore {
     /// Wrap `emulator_core`.
-    pub fn new(emulator_core: Box<dyn EmulatorCore>) -> Self {
+    pub fn new(emulator_core: Box<dyn EmulatorCore>, mut timestamp_provider: Box<dyn MonotonicTimestampProvider>) -> Self {
         Self {
             replay_file_recorder: None,
             base_input: Input::default(),
@@ -121,29 +128,50 @@ impl SuperShuckieCore {
             current_input: Default::default(),
             mid_frame: false,
             input_scratch_buffer: Vec::new(),
-            milliseconds: Arc::new(Default::default()),
+            total_milliseconds: 0,
+            starting_milliseconds: timestamp_provider.get_timestamp(),
             game_speed: Default::default(),
-            ticks_per_second: emulator_core.ticks_per_second(),
-            ticks_over_256: 0,
             frames_since_last_keyframe: 0,
             frames_per_keyframe: 0,
             total_frames: 0,
+            replay_player: None,
+            replay_frames_delay: 0u64,
+            replay_stalled: false,
+            paused_timer_at: None,
             core: emulator_core,
+            timestamp_provider
         }
     }
 
     /// Run the emulator core for the shortest amount of time.
     pub fn run(&mut self) {
-        self.before_run();
-        let time = self.core.run();
-        self.after_run(&time);
+        if !self.replay_stalled {
+            self.before_run();
+        }
+
+        if !self.replay_stalled {
+            let time = self.core.run();
+            self.after_run(&time);
+        }
     }
 
     /// Run the emulator core for the shortest amount of time without any timekeeping.
     pub fn run_unlocked(&mut self) {
-        self.before_run();
-        let time = self.core.run_unlocked();
-        self.after_run(&time);
+        if !self.replay_stalled {
+            self.before_run();
+        }
+
+        if !self.replay_stalled {
+            let time = self.core.run_unlocked();
+            self.after_run(&time);
+        }
+    }
+
+    /// Run unlocked until the next frame.
+    pub fn finish_current_frame(&mut self) {
+        while self.mid_frame && !self.replay_stalled {
+            self.run_unlocked();
+        }
     }
 
     /// Enqueue a write for the next frame.
@@ -152,12 +180,104 @@ impl SuperShuckieCore {
         self.flush_writes();
     }
 
+    /// Pause the current timer.
+    pub fn pause_timer(&mut self) {
+        self.paused_timer_at = Some(self.total_milliseconds + self.starting_milliseconds);
+    }
+
+    /// Unpause the current timer if it is currently paused.
+    pub fn unpause_timer(&mut self) {
+        let Some(paused_time) = self.paused_timer_at.take() else {
+            return
+        };
+        let unpaused_time = self.timestamp_provider.get_timestamp();
+
+        self.starting_milliseconds = self.starting_milliseconds.wrapping_add(unpaused_time.wrapping_sub(paused_time));
+    }
+
+    fn restart_timer(&mut self) {
+        self.paused_timer_at = None;
+        self.starting_milliseconds = self.timestamp_provider.get_timestamp();
+        self.total_milliseconds = 0;
+        self.total_frames = 0;
+    }
+
     /// Get an immutable reference to the underlying core.
     pub fn get_core(&self) -> &dyn EmulatorCore {
         self.core.as_ref()
     }
 
+    /// Set the speed multiplier of the game.
+    pub fn set_speed(&mut self, speed: Speed) {
+        self.game_speed = Speed::from_multiplier_float(speed.into_multiplier_float());
+        self.core.set_speed(speed.into_multiplier_float());
+        self.with_recorder(|r| r.set_speed(speed));
+    }
+
+    fn handle_replay(&mut self) {
+        if self.replay_stalled {
+            return
+        }
+
+        if self.mid_frame {
+            return
+        }
+
+        if self.replay_frames_delay != 0 {
+            return
+        }
+
+        let Some(mut player) = self.replay_player.take() else {
+            return
+        };
+
+        loop {
+            match player.next_packet() {
+                Ok(None) => {
+                    self.replay_stalled = true;
+                    break;
+                },
+                Ok(Some(n)) => {
+                    match n {
+                        Packet::NoOp => {}
+                        Packet::NextFrame { timestamp_delta } => {
+                            self.replay_frames_delay = 1;
+                            self.total_milliseconds = self.total_milliseconds.wrapping_add(*timestamp_delta);
+                            break;
+                        }
+                        Packet::WriteMemory { address, data } => {
+                            self.core.write_ram(*address as u32, data.as_slice()).expect("failed to write RAM (and this was not handled)");
+                        }
+                        Packet::ChangeInput { data } => {
+                            self.core.set_input_encoded(data.as_slice());
+                        }
+                        Packet::ChangeSpeed { speed } => {
+                            self.set_speed(*speed);
+                        }
+                        Packet::ResetConsole => {
+                            self.hard_reset();
+                        }
+                        Packet::LoadSaveState { state } => {
+                            self.mid_frame = false;
+                            let _ = self.core.load_save_state(state.as_slice());
+                        },
+                        Packet::Bookmark { .. } => {}
+                        Packet::Keyframe { .. } => {}
+                        Packet::CompressedBlob { .. } => unreachable!("compressed blob")
+                    }
+                }
+                Err(_) => {
+                    self.replay_stalled = true;
+                    break
+                }
+            }
+        }
+
+        self.replay_player = Some(player);
+    }
+
     fn before_run(&mut self) {
+        self.handle_replay();
         self.update_input();
         self.flush_writes();
     }
@@ -170,6 +290,10 @@ impl SuperShuckieCore {
     }
 
     fn flush_writes(&mut self) {
+        if self.replay_player.is_some() {
+            return
+        }
+
         if self.mid_frame {
             return
         }
@@ -190,6 +314,13 @@ impl SuperShuckieCore {
     /// Enqueue an input for the next frame.
     pub fn enqueue_input(&mut self, input: Input) {
         self.next_input = Some(input);
+    }
+
+    /// Enqueue an input for the next frame.
+    pub fn hard_reset(&mut self) {
+        self.core.hard_reset();
+        self.with_recorder(|recorder| recorder.reset_console());
+        self.mid_frame = false;
     }
 
     /// Set the current rapid fire input.
@@ -218,6 +349,35 @@ impl SuperShuckieCore {
         self.rapid_fire_input = Some(input);
     }
 
+    /// Create a save state.
+    pub fn create_save_state(&self) -> Vec<u8> {
+        self.core.create_save_state()
+    }
+
+    /// Get the SRAM.
+    pub fn save_sram(&self) -> Vec<u8> {
+        self.core.save_sram()
+    }
+
+    /// Load a save state.
+    pub fn load_save_state(&mut self, state: &[u8]) {
+        if self.replay_player.is_some() {
+            return
+        }
+
+        self.mid_frame = false;
+        let _ = self.core.load_save_state(state);
+
+        if self.replay_file_recorder.is_some() {
+            self.with_recorder(|r| r.load_save_state(state.into()));
+        }
+        else {
+            self.mid_frame = true;
+            self.finish_current_frame();
+            let _ = self.core.load_save_state(state);
+        }
+    }
+
     /// Set the current toggled input.
     ///
     /// Any activated buttons will be "stuck".
@@ -225,14 +385,79 @@ impl SuperShuckieCore {
         self.toggled_input = input;
     }
 
-    /// Attach a replay recorder.
-    pub fn attach_replay_file_recorder(&mut self, recorder: Option<Box<dyn ReplayFileRecorderFns>>) {
+    /// Start recording a replay.
+    pub fn start_recording_replay<
+        FS: ReplayFileSink + Send + Sync + 'static,
+        TS: ReplayFileSink + Send + Sync + 'static
+    >(&mut self, partial_replay_record_metadata: PartialReplayRecordMetadata<FS, TS>) -> Result<(), ReplayFileWriteError> {
+        self.stop_recording_replay();
+        self.detach_replay_player();
+
+        let console_type = self.core.replay_console_type().expect("NO CONSOLE_TYPE WHEN STARTING REPLAY OH NO");
+        let rom_checksum = self.core.rom_checksum().to_owned();
+        let bios_checksum = self.core.bios_checksum().to_owned();
+        let emulator_core_name = self.core.core_name().to_owned();
+        let initial_input = self.current_input;
+        let initial_speed = self.game_speed;
+
+        self.finish_current_frame();
+
+        let initial_state = ByteVec::Heap(self.core.create_save_state());
+        let mut initial_input_data = Vec::new();
+        self.core.encode_input(initial_input, &mut initial_input_data);
+        self.core.set_input_encoded(&initial_input_data);
+        self.restart_timer();
+
+        let recorder = NonBlockingReplayFileRecorder::new(ReplayFileRecorder::new_with_metadata(
+            ReplayFileMetadata {
+                console_type,
+                rom_name: partial_replay_record_metadata.rom_name,
+                rom_filename: partial_replay_record_metadata.rom_filename,
+                rom_checksum,
+                bios_checksum,
+                emulator_core_name,
+                patch_format: ReplayPatchFormat::Unpatched,
+                patch_target_checksum: ReplayHeaderBlake3Hash::default(),
+            },
+
+            ByteVec::new(),
+            partial_replay_record_metadata.settings,
+            self.total_milliseconds,
+
+            ByteVec::Heap(initial_input_data),
+            initial_speed,
+            initial_state,
+            partial_replay_record_metadata.final_file,
+            partial_replay_record_metadata.temp_file
+        )?);
+
+        self.frames_per_keyframe = partial_replay_record_metadata.frames_per_keyframe.get();
+        self.replay_file_recorder = Some(Box::new(recorder));
+
+        Ok(())
+    }
+
+    /// Get number of milliseconds
+    ///
+    /// This will reset to 0 whenever a replay is started.
+    pub fn get_recording_milliseconds(&self) -> TimestampMillis {
+        self.total_milliseconds
+    }
+
+    /// Stop recording the current replay.
+    ///
+    /// Returns None if no replay was being recorded. Otherwise, returns Some(true) if successfully closed, or Some(false) if not.
+    pub fn stop_recording_replay(&mut self) -> Option<bool> {
         if let Some(mut old_recorder) = self.replay_file_recorder.take() {
-            if !old_recorder.is_closed() {
-                let _ = old_recorder.close();
+            return if !old_recorder.is_closed() {
+                Some(old_recorder.close().is_ok())
+            }
+            else {
+                Some(true)
             }
         }
-        self.replay_file_recorder = recorder;
+
+        None
     }
 
     fn with_recorder<T, F: FnOnce(&mut dyn ReplayFileRecorderFns) -> T>(&mut self, what: F) -> Option<T> {
@@ -245,13 +470,16 @@ impl SuperShuckieCore {
     }
 
     fn update_input(&mut self) {
+        if self.replay_player.is_some() {
+            return
+        }
+
         if self.mid_frame {
             return
         }
 
         if let Some(pending_input) = self.next_input.take() {
             self.base_input = pending_input;
-            return
         };
 
         let mut new_input = self.base_input;
@@ -263,12 +491,9 @@ impl SuperShuckieCore {
             new_input |= toggled_input
         }
 
-        if self.current_input == new_input {
-            return;
-        }
-
         self.current_input = new_input;
         self.input_scratch_buffer.clear();
+
         self.core.encode_input(self.current_input, &mut self.input_scratch_buffer);
         self.core.set_input_encoded(self.input_scratch_buffer.as_slice());
 
@@ -282,35 +507,28 @@ impl SuperShuckieCore {
     }
 
     fn do_frame_timekeeping(&mut self, time: &RunTime) {
-        let ticks_passed = time.ticks * (self.game_speed.speed_over_256.get() as u64);
-        self.ticks_over_256 = self.ticks_over_256.saturating_add(ticks_passed);
         self.frames_since_last_keyframe += time.frames;
         self.total_frames = self.total_frames.wrapping_add(time.frames);
+        self.replay_frames_delay = self.replay_frames_delay.saturating_sub(time.frames);
 
         if let Some(rapid_fire) = self.rapid_fire_input.as_mut() {
             rapid_fire.current_frame = rapid_fire.current_frame.wrapping_add(1) % rapid_fire.total_frames;
         }
 
-        // We want to take ticks_over_256 and turn it into milliseconds
-        //
-        // To do that, we can get ticks_over_256 and divide by 256 to get the actual tick count.
-        // Then divide by ticks per second and multiply the result by 1000.
-        //
-        // To reduce precision loss, we can multiply ticks_over_256 by 1000 and then divide the
-        // result by 256.
-        //
-        // And to minimize the size of numbers, we can simplify 1000/256 to 125/32.
-        let ms = (((125 * self.ticks_over_256) as f64) / self.ticks_per_second) as u64 / 32;
-        self.milliseconds.swap(ms.min(u32::MAX as u64) as u32, Ordering::Relaxed);
+        self.mid_frame = time.frames == 0;
 
-        self.with_recorder(|f| {
-            // Add frames...
-            for _ in 0..time.frames {
-                f.next_frame()
-            }
-        });
+        if self.replay_player.is_none() && !self.mid_frame {
+            let ms = self.timestamp_provider.get_timestamp() - self.starting_milliseconds;
+            self.total_milliseconds = ms;
 
-        self.mid_frame = time.frames > 0;
+            self.with_recorder(|f| {
+                // Add frames...
+                for _ in 0..time.frames {
+                    let _ = f.next_frame(ms);
+                }
+            });
+        }
+
     }
 
     fn push_keyframe_if_needed(&mut self) {
@@ -318,12 +536,217 @@ impl SuperShuckieCore {
             return
         }
 
-        let elapsed_ticks = self.ticks_over_256;
         self.frames_since_last_keyframe = 0;
-
+        let ms = self.total_milliseconds;
         let save_state = Some(ByteVec::Heap(self.core.create_save_state()));
         self.with_recorder(|f| {
-            let _ = f.insert_keyframe(save_state.unwrap(), elapsed_ticks);
+            let _ = f.insert_keyframe(save_state.unwrap(), ms);
         });
+    }
+
+    /// Attach a replay file player to the core.
+    pub fn attach_replay_player(&mut self, mut player: ReplayFilePlayer, allow_mismatched: bool) -> Result<(), ReplayPlayerAttachError> {
+        let metadata = player.get_replay_metadata();
+        let core_console_type = self.core.replay_console_type();
+
+        if Some(metadata.console_type) != core_console_type {
+            return Err(ReplayPlayerAttachError::Incompatible {
+                description: format!("Console types don't match! (replay: {:?}, rom: {core_console_type:?})", metadata.console_type)
+            })
+        }
+
+        if !allow_mismatched {
+            let mut mismatched_list = Vec::new();
+
+            let rom_checksum = *self.core.rom_checksum();
+            let bios_checksum = *self.core.bios_checksum();
+            let core_name = self.core.core_name();
+
+            if metadata.rom_checksum != rom_checksum {
+                mismatched_list.push(ReplayPlayerMetadataMismatchKind::ROMChecksumMismatch { replay: metadata.rom_checksum, loaded: bios_checksum })
+            }
+
+            if metadata.bios_checksum != bios_checksum {
+                mismatched_list.push(ReplayPlayerMetadataMismatchKind::BIOSChecksumMismatch { replay: metadata.rom_checksum, loaded: bios_checksum })
+            }
+
+            if metadata.emulator_core_name != core_name {
+                mismatched_list.push(ReplayPlayerMetadataMismatchKind::CoreMismatch { replay: metadata.emulator_core_name.clone(), loaded: core_name.to_owned() })
+            }
+
+            if !mismatched_list.is_empty() {
+                return Err(ReplayPlayerAttachError::MismatchedMetadata { issues: mismatched_list })
+            }
+        }
+
+        if let Err(e) = player.go_to_keyframe(0) {
+            todo!("can't go to 0th keyframe (and can't handle this error TODO): {e:?}")
+        }
+
+        self.current_input = Input::new();
+        self.next_input = None;
+        self.replay_player = Some(player);
+        self.replay_stalled = false;
+        self.restart_timer();
+
+        self.go_to_replay_frame(0);
+
+        Ok(())
+    }
+
+    /// Detach the current replay player.
+    pub fn detach_replay_player(&mut self) {
+        self.replay_stalled = false;
+        self.replay_player = None;
+        self.reset_input();
+    }
+
+    /// Reset the current input.
+    pub fn reset_input(&mut self) {
+        self.enqueue_input(Input::new());
+    }
+
+    /// Seek to the given frame (if playing back).
+    pub fn go_to_replay_frame(&mut self, frame: UnsignedInteger) {
+        self.go_to_replay_frame_inner(frame, frame);
+    }
+
+    fn go_to_replay_frame_inner(&mut self, frame: UnsignedInteger, desired: UnsignedInteger) {
+        let Some(p) = self.replay_player.as_mut() else {
+            return
+        };
+
+        let desired = desired.min(p.get_total_frames().saturating_sub(1));
+        if desired >= p.get_total_frames() {
+            return
+        }
+
+        if let Err(e) = p.go_to_keyframe(frame) {
+            match e {
+                ReplaySeekError::ReadError { error } => todo!("can't go to {frame}: {error:?} (can't handle this error TODO)"),
+                ReplaySeekError::NoSuchKeyframe { best, .. } => {
+                    return self.go_to_replay_frame_inner(best, desired);
+                }
+            }
+        }
+
+        let Ok(Some(Packet::Keyframe { metadata, state })) = p.next_packet() else {
+            todo!("replay file is broken (no keyframe found at frame {frame}!! and error handling not yet implemented)")
+        };
+
+        let speed = metadata.speed;
+
+        self.core.load_save_state(state.as_slice()).expect("replay file is broken (can't load save state) and error handling not yet implemented!");
+        self.core.set_input_encoded(metadata.input.as_slice());
+
+        self.mid_frame = false;
+        self.total_frames = metadata.elapsed_frames;
+        self.replay_stalled = false;
+        self.total_milliseconds = metadata.elapsed_millis;
+
+        self.set_speed(speed);
+
+        while self.total_frames <= desired && !self.replay_stalled {
+            self.run_unlocked();
+        }
+    }
+}
+
+/// Returns when an error occurs.
+#[derive(Clone, Debug)]
+pub enum ReplayPlayerAttachError {
+    /// Metadata is mismatched. It may desync.
+    #[allow(missing_docs)]
+    MismatchedMetadata {
+        issues: Vec<ReplayPlayerMetadataMismatchKind>
+    },
+
+    /// Metadata is mismatched.
+    #[allow(missing_docs)]
+    Incompatible {
+        description: String
+    }
+}
+
+/// Describes a metadata mismatch.
+#[derive(Clone, Debug)]
+#[allow(missing_docs)]
+pub enum ReplayPlayerMetadataMismatchKind {
+    ROMChecksumMismatch {
+        replay: ReplayHeaderBlake3Hash,
+        loaded: ReplayHeaderBlake3Hash
+    },
+
+    BIOSChecksumMismatch {
+        replay: ReplayHeaderBlake3Hash,
+        loaded: ReplayHeaderBlake3Hash
+    },
+
+    CoreMismatch {
+        replay: String,
+        loaded: String
+    }
+}
+
+impl Display for ReplayPlayerMetadataMismatchKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ReplayPlayerMetadataMismatchKind::ROMChecksumMismatch { replay, loaded } => {
+                f.write_fmt(format_args!(
+                    "ROM checksum mismatch! Either the wrong ROM is loaded, or it was modified.\n\n  Replay: {}\n  Loaded: {}\n\nThis can cause potential desyncs.",
+                    blake3_hash_to_ascii(*replay), blake3_hash_to_ascii(*loaded)
+                ))
+            }
+            ReplayPlayerMetadataMismatchKind::BIOSChecksumMismatch { replay, loaded } => {
+                f.write_fmt(format_args!(
+                    "BIOS checksum mismatch! Either the wrong BIOS is loaded, or it was modified.\n\n  Replay: {}\n  Loaded: {}\n\nThis can cause potential desyncs.",
+                    blake3_hash_to_ascii(*replay), blake3_hash_to_ascii(*loaded)
+                ))
+            }
+            ReplayPlayerMetadataMismatchKind::CoreMismatch { replay, loaded } => {
+                f.write_fmt(format_args!(
+                    "ROM core mismatch! Different cores or different versions of cores were used.\n\n  Replay: {}\n  Loaded: {}\n\nThis can cause potential desyncs UNLESS both cores have equal accuracy.",
+                    replay, loaded
+                ))
+            }
+        }
+    }
+}
+
+/// Function that monotonically produces a timestamp.
+///
+/// The timestamp must never go backwards, although it does not necessarily always have to go
+/// forwards, either.
+pub trait MonotonicTimestampProvider {
+    /// Get the timestamp.
+    fn get_timestamp(&mut self) -> TimestampMillis;
+}
+
+#[cfg(feature = "std")]
+/// Generate a timestamp provider backed by [`std::time::Instant`]
+pub fn std_timestamp_provider() -> Box<dyn MonotonicTimestampProvider> {
+    Box::new(std_timestamp_provider::StdTimestampProvider::new())
+}
+
+#[cfg(feature = "std")]
+mod std_timestamp_provider {
+    use std::time::Instant;
+    use supershuckie_replay_recorder::TimestampMillis;
+    use crate::MonotonicTimestampProvider;
+
+    pub struct StdTimestampProvider {
+        reference_time: Instant
+    }
+
+    impl StdTimestampProvider {
+        pub fn new() -> Self {
+            Self { reference_time: Instant::now() }
+        }
+    }
+
+    impl MonotonicTimestampProvider for StdTimestampProvider {
+        fn get_timestamp(&mut self) -> TimestampMillis {
+            (Instant::now() - self.reference_time).as_millis() as TimestampMillis
+        }
     }
 }

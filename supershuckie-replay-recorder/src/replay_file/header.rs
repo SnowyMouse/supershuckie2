@@ -17,6 +17,30 @@ pub const REPLAY_VERSION: u32 = 2;
 /// Blake3 checksum
 pub type ReplayHeaderBlake3Hash = [u8; 32];
 
+/// Convert the hash to an uppercase ASCII string (uppercase) for displaying.
+pub fn blake3_hash_to_ascii(hash: ReplayHeaderBlake3Hash) -> String {
+    let mut ascii = String::with_capacity(64);
+
+    for b in hash {
+        let high = b >> 4;
+        let low = b & 0xF;
+
+        fn get_char(b: u8) -> char {
+            if b <= 0x9 {
+                (b'0' + b) as char
+            }
+            else {
+                (b'A' + (b - 0xA)) as char
+            }
+        }
+
+        ascii.push(get_char(high));
+        ascii.push(get_char(low));
+    }
+
+    ascii
+}
+
 /// UTF-8 null-terminated 255 byte length string
 pub type ReplayHeaderString = [u8; 256];
 
@@ -125,7 +149,7 @@ impl ReplayHeaderRaw {
     /// Returns an error with a description if it is invalid.
     pub fn parse(&self) -> Result<ReplayFileMetadata, String> {
         let signature_start = self.signature_start;
-        let signature_end = self.signature_start;
+        let signature_end = self.signature_end;
         let replay_version = self.replay_version;
 
         if signature_start != SIGNATURE_START {

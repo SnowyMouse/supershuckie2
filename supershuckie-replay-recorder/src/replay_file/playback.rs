@@ -28,7 +28,7 @@ use alloc::sync::Arc;
 use alloc::collections::BTreeMap;
 use alloc::vec;
 use crate::replay_file::{ReplayFileMetadata, ReplayHeaderBytes, ReplayHeaderRaw};
-use crate::{BookmarkMetadata, KeyframeMetadata, Packet, PacketIO, PacketReadError, UnsignedInteger};
+use crate::{BookmarkMetadata, KeyframeMetadata, Packet, PacketIO, PacketReadError, TimestampMillis, UnsignedInteger};
 use crate::util::{decompress_data, launder_reference};
 
 type KeyframeMap<'a> = BTreeMap<UnsignedInteger, Vec<&'a KeyframeMetadata>>;
@@ -41,6 +41,9 @@ pub struct ReplayFilePlayer {
     all_uncompressed_packets: Arc<Vec<Packet>>,
     keyframes: KeyframeMap<'static>,
     bookmarks: BookmarkMap<'static>,
+
+    total_frame_count: UnsignedInteger,
+    total_millis: TimestampMillis,
 
     compressed_blobs_decompressing: BTreeMap<usize, Option<Arc<Mutex<PacketDecompressionStatus>>>>,
     compressed_blobs_finished: BTreeMap<usize, Option<Arc<Vec<Packet>>>>,
@@ -58,7 +61,7 @@ impl ReplayFilePlayer {
     ///
     /// If `allow_some_corruption`, then the parser will break early if it detects a corrupted
     /// packet and there is still some sort of usable stream. Otherwise, it will return `Err`.
-    pub fn new_from_byte_buffer<B: AsRef<[u8]>>(data: B, allow_some_corruption: bool) -> Result<ReplayFilePlayer, ReplayFileReadError> {
+    pub fn new<B: AsRef<[u8]>>(data: B, allow_some_corruption: bool) -> Result<ReplayFilePlayer, ReplayFileReadError> {
         let buffer_bytes = data.as_ref();
         let Some(header_buffer) = buffer_bytes.get(..size_of::<ReplayHeaderBytes>()) else {
             return Err(ReplayFileReadError::InvalidReplayFile { explanation: Cow::Borrowed("cannot read header") });
@@ -122,13 +125,17 @@ impl ReplayFilePlayer {
         let mut all_keyframes = KeyframeMap::new();
         let mut all_bookmarks = BookmarkMap::new();
 
+        let mut total_frame_count: UnsignedInteger = 0;
+        let mut total_millis: UnsignedInteger = 0;
+
         macro_rules! add_keyframe {
-            ($metadata:expr) => {
+            ($metadata:expr) => {{
+                total_frame_count = $metadata.elapsed_frames;
                 match all_keyframes.get_mut(&$metadata.elapsed_frames) {
                     Some(n) => n.push($metadata),
                     None => { all_keyframes.insert( $metadata.elapsed_frames, vec![$metadata]); }
                 }
-            };
+            }};
         }
 
         macro_rules! add_bookmark {
@@ -146,7 +153,13 @@ impl ReplayFilePlayer {
 
         for (packet_index, packet) in all_packets.iter().enumerate() {
             match packet {
-                Packet::CompressedBlob { keyframes, bookmarks, uncompressed_size, .. } => {
+                Packet::CompressedBlob {
+                    keyframes,
+                    bookmarks,
+                    uncompressed_size,
+                    timestamp_end,
+                    ..
+                } => {
                     // Vec works with up to isize maximum elements
                     if isize::try_from(*uncompressed_size).is_err() {
                         return Err(ReplayFileReadError::Other { explanation: Cow::Borrowed("Replay has a compressed blob that decompressed beyond the current architectural limits") });
@@ -165,12 +178,19 @@ impl ReplayFilePlayer {
                     for i in bookmarks {
                         add_bookmark!(i)
                     }
+
+                    total_millis = *timestamp_end;
                 },
                 Packet::Keyframe { metadata, .. } => {
                     add_keyframe!(metadata);
                 },
+                Packet::NextFrame { timestamp_delta } => {
+                    total_frame_count += 1;
+                    total_millis += timestamp_delta;
+                }
                 Packet::Bookmark { metadata } => {
                     add_bookmark!(metadata);
+                    total_millis = metadata.elapsed_millis;
                 },
                 _ => {}
             }
@@ -191,12 +211,24 @@ impl ReplayFilePlayer {
             compressed_blob_uncompressed_packet_indices: compressed_blob_indices,
             compressed_blobs_decompressing: compressed_blobs,
             compressed_blobs_finished,
+            total_frame_count,
+            total_millis,
 
             #[cfg(feature = "std")]
             threading: false
         };
 
         Ok(player)
+    }
+
+    /// Get the total frame count.
+    pub fn get_total_frames(&self) -> UnsignedInteger {
+        self.total_frame_count
+    }
+
+    /// Get the total milliseconds of the replay.
+    pub fn get_total_milliseconds(&self) -> UnsignedInteger {
+        self.total_millis
     }
 
     /// Enable decompression on a separate thread.
@@ -286,14 +318,14 @@ impl ReplayFilePlayer {
                 Packet::Keyframe { metadata, .. } => {
                     if metadata.elapsed_frames == keyframe_frames_index {
                         self.next_compressed_packet_index = Some(subpacket_index);
-                        break
+                        return Ok(())
                     }
                 },
                 _ => continue
             }
         }
 
-        unreachable!("failed to find keyframe somehow even though we somehow had it in self.keyframes...")
+        unreachable!("failed to find keyframe somehow even though we somehow had it in self.keyframes...");
     }
 
     fn decompress_immediately(&mut self, blob_packet_index: usize) -> Result<(), ReplayFileReadError> {

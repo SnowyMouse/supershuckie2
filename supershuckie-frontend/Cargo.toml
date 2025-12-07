@@ -1,0 +1,12 @@
+[package]
+name = "supershuckie-frontend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+supershuckie-core = { workspace = true }
+supershuckie-replay-recorder = { workspace = true }
+serde_json = { workspace = true }
+serde = { version = "1.0.228", features = ["derive"] }
+num_enum = { workspace = true }
