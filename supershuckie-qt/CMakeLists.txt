@@ -9,6 +9,8 @@ include(corrosion.cmake)
 
 corrosion_import_crate(MANIFEST_PATH "${CMAKE_SOURCE_DIR}/../supershuckie-core-c/Cargo.toml")
 
+set(CMAKE_AUTOMOC ON)
+
 if(${WIN32})
     set(EXE_TYPE "WIN32")
 endif()

@@ -7,12 +7,23 @@
 #include <supershuckie/supershuckie.hpp>
 
 class SuperShuckieRenderWidget;
+class QMenu;
+class QAction;
+class QCloseEvent;
+
+enum ReplayStatus {
+    NoReplay,
+    Recording,
+    PlayingBack
+};
 
 class SuperShuckieMainWindow: public QMainWindow {
+    Q_OBJECT
     friend SuperShuckieRenderWidget;
     
 public:
     SuperShuckieMainWindow();
+    ~SuperShuckieMainWindow();
 private:
     void set_title(const char *title);
     SuperShuckieRenderWidget *render_widget;
@@ -25,6 +36,69 @@ private:
 
     void refresh_screen_dimensions();
     void tick();
+
+    ReplayStatus replay_status = ReplayStatus::NoReplay;
+
+    void set_up_menu();
+    QMenuBar *menu_bar;
+
+    QMenu *file_menu;
+    QMenu *gameplay_menu;
+    QMenu *save_states_menu;
+    QMenu *replays_menu;
+    QMenu *settings_menu;
+
+    QMenu *quick_slots;
+
+    QAction *open_rom;
+    QAction *close_rom;
+
+    QAction *new_game;
+    QAction *save_game;
+    QAction *save_new_game;
+    QAction *reset_console;
+    QAction *pause;
+    QAction *quit;
+
+    QAction *record_replay;
+    QAction *resume_replay;
+    QAction *play_replay;
+
+    QAction *use_number_row_for_quick_slots;
+
+    static const std::size_t QUICK_SAVE_STATE_COUNT = 9;
+
+    QAction *quick_load_save_states[QUICK_SAVE_STATE_COUNT];
+    QAction *quick_save_save_states[QUICK_SAVE_STATE_COUNT];
+
+    bool game_loaded = false;
+    bool use_number_keys_for_quick_slots = false;
+
+    void set_up_file_menu();
+    void set_up_gameplay_menu();
+    void set_up_save_states_menu();
+    void set_up_replays_menu();
+    void set_up_settings_menu();
+
+    void refresh_action_states();
+    void set_quick_load_shortcuts();
+
+    bool try_unload_rom();
+
+    void closeEvent(QCloseEvent *event);
+
+private slots:
+    void open_rom_dialog();
+    void do_close_rom();
+    void do_new_game();
+    void do_save_game();
+    void do_save_new_game();
+    void do_reset_console();
+    void do_toggle_pause();
+    void do_toggle_number_row_for_save_states();
+    void do_record_replay();
+    void do_resume_replay();
+    void do_play_replay();
 };
 
 #endif
