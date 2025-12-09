@@ -310,7 +310,7 @@ impl SuperShuckieCore {
             }
         });
 
-        self.mid_frame = time.frames > 0;
+        self.mid_frame = time.frames == 0;
     }
 
     fn push_keyframe_if_needed(&mut self) {

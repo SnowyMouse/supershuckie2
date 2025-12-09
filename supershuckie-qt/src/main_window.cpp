@@ -3,9 +3,17 @@
 #include <SDL3/sdl.h>
 #include <QMenuBar>
 #include <QCloseEvent>
+#include <QFileDialog>
+
+#include "../../../../bootrom/cgb/cgb_boot/cgb_boot_fast.hpp"
+
+#include "error.hpp"
+#include "file_rw.hpp"
 
 #include "render_widget.hpp"
 #include "main_window.hpp"
+
+using namespace SuperShuckie64;
 
 SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow(), core(SuperShuckieCore::new_null()) {
     // Remove rounded corners (Windows)
@@ -14,7 +22,6 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow(), core(SuperShuck
     DwmSetWindowAttribute(reinterpret_cast<HWND>(this->winId()), 33, &one, sizeof(one));
     #endif
 
-    this->set_title("No ROM loaded");
     this->render_widget = new SuperShuckieRenderWidget(this);
     this->setCentralWidget(this->render_widget);
 
@@ -25,15 +32,22 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow(), core(SuperShuck
     this->ticker.callOnTimeout(this, &SuperShuckieMainWindow::tick);
     this->ticker.start();
 
-    this->refresh_screen_dimensions();
-    this->render_widget->refresh_screen(true);
-
     this->set_up_menu();
+    this->try_unload_rom();
 }
 
 void SuperShuckieMainWindow::set_title(const char *title) {
     char fmt[512];
-    std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s", title);
+
+    const char *rom_name = (this->current_rom_name == std::nullopt) ? "No ROM loaded" : this->current_rom_name.value().c_str();
+    
+    if(title == nullptr || title[0] == 0) {
+        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s", rom_name);
+    }
+    else {
+        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s - %s", rom_name, title);
+    }
+
     this->setWindowTitle(fmt);
 }
 
@@ -42,6 +56,7 @@ void SuperShuckieMainWindow::refresh_screen_dimensions() {
 
     const auto &screens = this->core.get_screens(updated);
     const auto &first_screen = screens[0];
+
     this->render_widget->set_dimensions(first_screen.width,first_screen.height,this->scale);
 }
 
@@ -83,7 +98,7 @@ void SuperShuckieMainWindow::set_up_file_menu() {
 
     this->open_rom = this->file_menu->addAction("Open ROM...");
     this->open_rom->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_O));
-    connect(this->open_rom, SIGNAL(triggered()), this, SLOT(open_rom_dialog()));
+    connect(this->open_rom, SIGNAL(triggered()), this, SLOT(do_open_rom()));
 
     this->close_rom = this->file_menu->addAction("Close ROM");
     this->close_rom->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_W));
@@ -217,8 +232,54 @@ SuperShuckieMainWindow::~SuperShuckieMainWindow() {
 
 }
 
-void SuperShuckieMainWindow::open_rom_dialog() {
-    // FIXME
+void SuperShuckieMainWindow::do_open_rom() {
+    QFileDialog rom_opener;
+    rom_opener.setFileMode(QFileDialog::FileMode::ExistingFile);
+    rom_opener.setNameFilters(QStringList({"GB/GBC ROM dumps (*.gb *.gbc)", "Any files (*)"}));
+    rom_opener.setWindowTitle("Select a ROM to open");
+    rom_opener.exec();
+
+    auto files = rom_opener.selectedFiles();
+    if(files.size() != 1) {
+        return;
+    }
+
+    this->load_rom(files[0].toStdString());
+}
+
+void SuperShuckieMainWindow::load_rom(const std::filesystem::path &path) {
+    auto extension = path.extension().string();
+    for(char &c : extension) {
+        if(c >= 'A' && c <= 'Z') {
+            c = std::tolower(c);
+        }
+    }
+
+    auto file = read_file(path);
+    if(file == std::nullopt) {
+        return;
+    }
+
+    if(extension == ".gb" || extension == ".gbc") {
+        this->load_gbc(path.filename().string(), file.value());
+    }
+    else if(extension == "" || extension == ".") {
+        DISPLAY_ERROR_DIALOG("Can't load ROM", "\"%s\" does not appear to be a valid ROM file!", path.filename().string().c_str());
+    }
+    else {
+        DISPLAY_ERROR_DIALOG("Can't load ROM", "\"%s\" does not appear to be a valid ROM file!\n\n(unknown extension \"%s\")", path.filename().string().c_str(), extension.c_str());
+    }
+}
+
+void SuperShuckieMainWindow::load_gbc(const std::string &name, const std::vector<std::byte> &data) {
+    if(!this->try_unload_rom()) {
+        return;
+    }
+
+    this->core = SuperShuckieCore::new_from_gameboy(data.data(), data.size(), AUTOGEN_CGB_BOOT_FAST_HPP_VAL, sizeof(AUTOGEN_CGB_BOOT_FAST_HPP_VAL), GameBoyType::GameBoyType__GameBoyColor);
+    this->game_loaded = true;
+    this->current_rom_name = name;
+    this->on_rom_switch();
 }
 
 void SuperShuckieMainWindow::do_close_rom() {
@@ -268,7 +329,8 @@ bool SuperShuckieMainWindow::try_unload_rom() {
     
     this->core = SuperShuckieCore::new_null();
     this->game_loaded = false;
-    this->refresh_action_states();
+    this->current_rom_name = std::nullopt;
+    this->on_rom_switch();
     return true;
 }
 
@@ -288,4 +350,20 @@ void SuperShuckieMainWindow::do_resume_replay() {
 
 void SuperShuckieMainWindow::do_play_replay() {
     // FIXME
+}
+
+void SuperShuckieMainWindow::on_rom_switch() {
+    if(this->game_loaded) {
+        this->set_title("Loaded ROM successfully!");
+    }
+    else {
+        this->set_title();
+    }
+    this->refresh_action_states();
+    this->refresh_screen_dimensions();
+    this->render_widget->refresh_screen(true);
+
+    if(this->game_loaded && !this->pause->isChecked()) {
+        this->core.start();
+    }
 }

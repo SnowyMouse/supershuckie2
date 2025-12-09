@@ -5,9 +5,12 @@
 #include <QGraphicsView>
 #include <QPixmap>
 
+class QGraphicsScene;
+
+namespace SuperShuckie64 {
+
 class SuperShuckieMainWindow;
 class SuperShuckieGraphicsView;
-class QGraphicsScene;
 
 class SuperShuckieRenderWidget: public QGraphicsView {
     friend SuperShuckieMainWindow;
@@ -29,5 +32,7 @@ private:
     void rebuild_scene();
     void refresh_screen(bool force = false);
 };
+
+}
 
 #endif

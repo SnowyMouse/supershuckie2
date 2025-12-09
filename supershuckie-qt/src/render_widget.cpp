@@ -2,6 +2,8 @@
 #include "main_window.hpp"
 #include <QGraphicsPixmapItem>
 
+using namespace SuperShuckie64;
+
 SuperShuckieRenderWidget::SuperShuckieRenderWidget(SuperShuckieMainWindow *parent): QGraphicsView(parent), main_window(parent) {
     this->setFrameStyle(0);
     this->setHorizontalScrollBarPolicy(Qt::ScrollBarPolicy::ScrollBarAlwaysOff);

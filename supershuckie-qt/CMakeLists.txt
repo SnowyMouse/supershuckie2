@@ -19,6 +19,7 @@ add_executable(supershuckie ${EXE_TYPE}
     src/main.cpp
     src/main_window.cpp
     src/render_widget.cpp
+    src/file_rw.cpp
 )
 
 set_property(TARGET supershuckie PROPERTY CXX_STANDARD 20)

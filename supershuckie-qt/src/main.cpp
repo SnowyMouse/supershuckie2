@@ -15,8 +15,12 @@ int main(int argc, char **argv) {
 
     QApplication app(argc, argv);
 
-    SuperShuckieMainWindow window;
+    SuperShuckie64::SuperShuckieMainWindow window;
     window.show();
+
+    if(argc == 2) {
+        window.load_rom(argv[1]);
+    }
 
     int result = app.exec();
     SDL_Quit();

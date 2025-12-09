@@ -3,13 +3,17 @@
 
 #include <QMainWindow>
 #include <QTimer>
+#include <filesystem>
 
 #include <supershuckie/supershuckie.hpp>
 
-class SuperShuckieRenderWidget;
 class QMenu;
 class QAction;
 class QCloseEvent;
+
+namespace SuperShuckie64 {
+
+class SuperShuckieRenderWidget;
 
 enum ReplayStatus {
     NoReplay,
@@ -24,8 +28,11 @@ class SuperShuckieMainWindow: public QMainWindow {
 public:
     SuperShuckieMainWindow();
     ~SuperShuckieMainWindow();
+
+    void load_rom(const std::filesystem::path &path);
+
 private:
-    void set_title(const char *title);
+    void set_title(const char *title = "");
     SuperShuckieRenderWidget *render_widget;
 
     SuperShuckieCore core;
@@ -84,11 +91,16 @@ private:
     void set_quick_load_shortcuts();
 
     bool try_unload_rom();
+    void on_rom_switch();
 
     void closeEvent(QCloseEvent *event);
 
+    void load_gbc(const std::string &name, const std::vector<std::byte> &data);
+
+    std::optional<std::string> current_rom_name;
+
 private slots:
-    void open_rom_dialog();
+    void do_open_rom();
     void do_close_rom();
     void do_new_game();
     void do_save_game();
@@ -100,5 +112,7 @@ private slots:
     void do_resume_replay();
     void do_play_replay();
 };
+
+}
 
 #endif
