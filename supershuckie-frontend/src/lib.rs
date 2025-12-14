@@ -1,35 +1,20 @@
 pub mod util;
+pub mod settings;
 
-use std::ffi::CStr;
+use crate::settings::*;
 use crate::util::UTF8CString;
+use std::ffi::CStr;
+use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use supershuckie_core::emulator::{EmulatorCore, GameBoyColor, Input, Model, NullEmulatorCore, ScreenData};
 use supershuckie_core::ThreadedSuperShuckieCore;
+
+const SETTINGS_FILE: &str = "settings.json";
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum SuperShuckieEmulatorType {
     GameBoy,
     GameBoyColor
-}
-
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub enum GBMode {
-    /// Run all Game Boy games in Game Boy Color mode
-    AlwaysGBC,
-
-    /// Run Game Boy games in Game Boy mode
-    GBInGBMode,
-
-    /// Run Game Boy Color games in Game Boy mode if they are backwards compatible
-    GBCBackwardsCompatibleInGBMode,
-
-    /// Run all Game Boy games in Game Boy mode, even incompatible Game Boy Color games
-    AlwaysGB
-}
-
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub struct GBSettings {
-    pub run_mode: GBMode
 }
 
 #[expect(dead_code)]
@@ -40,39 +25,60 @@ pub struct SuperShuckieFrontend {
     callbacks: Box<dyn SuperShuckieFrontendCallbacks>,
 
     user_dir: PathBuf,
-    paused: bool,
     frame_count: u32,
 
     loaded_rom_data: Option<Vec<u8>>,
 
+    current_input: Input,
+
     rom_name: Option<UTF8CString>,
     save_file: Option<UTF8CString>,
 
-    gb_settings: GBSettings
+    settings: Settings
 }
 
 impl SuperShuckieFrontend {
     pub fn new<P: AsRef<Path>>(user_dir: P, callbacks: Box<dyn SuperShuckieFrontendCallbacks>) -> Self {
+        let user_dir = user_dir.as_ref().to_owned();
+
+        // FIXME: Check this
+        let settings = try_to_init_user_dir_and_get_settings(user_dir.as_ref()).expect("failed to init user_dir");
+
         let mut s = Self {
             core: ThreadedSuperShuckieCore::new(Box::new(NullEmulatorCore)),
             core_metadata: CoreMetadata { emulator_type: None },
-            user_dir: user_dir.as_ref().to_owned(),
+            user_dir,
             rom_name: None,
             save_file: None,
-            paused: false,
             loaded_rom_data: None,
             frame_count: 0,
             callbacks,
-
-            // todo: load settings
-            gb_settings: GBSettings {
-                run_mode: GBMode::AlwaysGBC
-            }
+            settings,
+            current_input: Input::default(),
         };
 
         s.unload_rom();
 
         s
+    }
+
+    pub fn get_settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    pub fn set_button_input(&mut self, control: &ControlSetting, pressed: bool) {
+        if control.control.is_button() {
+            match control.modifier {
+                ControlModifier::Normal => {
+                    control.control.set_for_input(&mut self.current_input, pressed);
+                    self.core.enqueue_input(self.current_input);
+                },
+                ControlModifier::Rapid => {
+                    // TODO
+                }
+            }
+
+        }
     }
 
     pub fn load_rom<P: AsRef<Path>>(&mut self, path: P) -> Result<(), UTF8CString> {
@@ -95,13 +101,12 @@ impl SuperShuckieFrontend {
 
         let emulator_to_use = match extension.to_lowercase().as_str() {
             "gb" | "gbc" => {
-                match self.gb_settings.run_mode {
-                    GBMode::AlwaysGBC => SuperShuckieEmulatorType::GameBoyColor,
-                    GBMode::AlwaysGB => SuperShuckieEmulatorType::GameBoy,
+                match self.settings.game_boy_settings.gbc_mode {
+                    GameBoyMode::AlwaysGBC => SuperShuckieEmulatorType::GameBoyColor,
+                    GameBoyMode::AlwaysGB => SuperShuckieEmulatorType::GameBoy,
 
                     // TODO: check header (the extension will not help)
-                    GBMode::GBInGBMode => todo!(),
-                    GBMode::GBCBackwardsCompatibleInGBMode => todo!()
+                    GameBoyMode::GBInGBMode => todo!(),
                 }
             },
             unknown => return Err(format!("Unknown or unsupported ROM file type .{unknown}").into())
@@ -174,13 +179,14 @@ impl SuperShuckieFrontend {
         self.save_file = None;
         self.rom_name = None;
         self.core_metadata.emulator_type = None;
+        self.current_input = Input::default();
         self.after_switch_core();
     }
 
     /// Set whether or not the game is paused.
     pub fn set_paused(&mut self, paused: bool) {
         // we still want to do this for config reasons
-        self.paused = paused;
+        self.settings.emulation.paused = paused;
 
         if self.is_game_running() {
             if paused {
@@ -260,6 +266,11 @@ impl SuperShuckieFrontend {
         self.save_file.as_ref().map(|i| i.as_c_str())
     }
 
+    pub fn write_settings(&self) {
+        // TODO: handle errors here?
+        let _ = std::fs::write(self.user_dir.join(SETTINGS_FILE), serde_json::to_string_pretty(&self.settings).expect("failed to serialize"));
+    }
+
     fn before_unload_rom(&mut self) {
         if !self.is_game_running() {
             return
@@ -278,7 +289,8 @@ impl SuperShuckieFrontend {
 
     fn after_load_rom(&mut self) {
         self.force_refresh_screens();
-        if !self.paused {
+        self.current_input = Input::default();
+        if !self.settings.emulation.paused {
             self.core.start();
         }
     }

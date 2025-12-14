@@ -1,0 +1,259 @@
+use std::collections::BTreeMap;
+use std::ffi::CStr;
+use std::fs;
+use std::fs::File;
+use std::hint::unreachable_unchecked;
+use std::io::{Read, Seek, SeekFrom};
+use std::num::NonZeroU8;
+use std::path::Path;
+use serde::{Deserialize, Serialize};
+use supershuckie_core::emulator::Input;
+use crate::SETTINGS_FILE;
+
+pub(crate) fn try_to_init_user_dir_and_get_settings(user_dir: &Path) -> Result<Settings, String> {
+    if !user_dir.exists() {
+        fs::create_dir(&user_dir).map_err(|e| format!("Failed to create the user_dir: {e}"))?;
+    }
+
+    let settings_toml = user_dir.join(SETTINGS_FILE);
+    let mut settings_file = File::options()
+        .write(true)
+        .read(true)
+        .create(true)
+        .open(settings_toml)
+        .map_err(|e| format!("Failed to open the settings file for write access: {e}"))?;
+
+    settings_file.seek(SeekFrom::Start(0)).map_err(|e| format!("Failed to seek the settings file: {e}"))?;
+
+    let mut settings_str = String::new();
+    settings_file.read_to_string(&mut settings_str).map_err(|e| format!("Failed to read the settings file: {e}"))?;
+
+    if settings_str.trim().is_empty() {
+        settings_str = "{}".to_owned();
+    }
+
+    let settings: Settings = serde_json::from_str::<Settings>(&settings_str).map_err(|e| format!("Failed to parse the settings file: {e}"))?;
+    Ok(settings)
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Settings {
+    #[serde(default = "EmulationSettings::default")]
+    pub emulation: EmulationSettings,
+
+    #[serde(default = "GameBoySettings::default")]
+    pub game_boy_settings: GameBoySettings,
+
+    #[serde(default = "KeyboardControls::default")]
+    pub keyboard_controls: KeyboardControls,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct EmulationSettings {
+    #[serde(default = "EmulationSettings::DEFAULT_SPEED")]
+    pub speed: f64,
+
+    #[serde(default = "EmulationSettings::DEFAULT_VIDEO_SCALE")]
+    pub video_scale: NonZeroU8,
+
+    #[serde(default = "EmulationSettings::DEFAULT_PAUSED")]
+    pub paused: bool
+}
+
+impl EmulationSettings {
+    const DEFAULT_SPEED: fn() -> f64 = || 1.0;
+    const DEFAULT_VIDEO_SCALE: fn() -> NonZeroU8 = || unsafe { NonZeroU8::new_unchecked(4) };
+    const DEFAULT_PAUSED: fn() -> bool = || false;
+}
+
+impl Default for EmulationSettings {
+    fn default() -> Self {
+        Self {
+            speed: EmulationSettings::DEFAULT_SPEED(),
+            video_scale: EmulationSettings::DEFAULT_VIDEO_SCALE(),
+            paused: EmulationSettings::DEFAULT_PAUSED()
+        }
+    }
+}
+
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct GameBoySettings {
+    #[serde(default = "GameBoyMode::default")]
+    pub gbc_mode: GameBoyMode
+}
+
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, Deserialize, Default)]
+pub enum GameBoyMode {
+    /// Run all Game Boy games in Game Boy Color mode
+    #[serde(rename = "GBC-always")]
+    #[default]
+    AlwaysGBC,
+
+    /// Run Game Boy games in Game Boy mode
+    #[serde(rename = "GBC-auto")]
+    GBInGBMode,
+
+    /// Run all Game Boy games in Game Boy mode, even incompatible Game Boy Color games
+    #[serde(rename = "GBC-never")]
+    AlwaysGB
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct KeyboardControls {
+    #[serde(default = "KeyboardControls::DEFAULT_MAP")]
+    pub mappings: BTreeMap<u8, ControlSetting>
+}
+
+impl KeyboardControls {
+    const DEFAULT_MAP: fn() -> BTreeMap<u8, ControlSetting> = || {
+        [
+            (b'A', ControlSetting { control: Control::A, modifier: ControlModifier::Normal }),
+            (b'S', ControlSetting { control: Control::B, modifier: ControlModifier::Normal }),
+            (b'Z', ControlSetting { control: Control::A, modifier: ControlModifier::Rapid }),
+            (b'X', ControlSetting { control: Control::B, modifier: ControlModifier::Rapid }),
+            (b'D', ControlSetting { control: Control::X, modifier: ControlModifier::Normal }),
+            (b'F', ControlSetting { control: Control::Y, modifier: ControlModifier::Normal }),
+            (b'Q', ControlSetting { control: Control::L, modifier: ControlModifier::Normal }),
+            (b'W', ControlSetting { control: Control::R, modifier: ControlModifier::Normal }),
+
+            (b' ', ControlSetting { control: Control::Select, modifier: ControlModifier::Normal }),
+
+            // TODO: Figure out what the actual key codes for these are
+            (4, ControlSetting { control: Control::Start, modifier: ControlModifier::Normal }), // 
+            (18, ControlSetting { control: Control::Left, modifier: ControlModifier::Normal }),
+            (19, ControlSetting { control: Control::Up, modifier: ControlModifier::Normal }),
+            (20, ControlSetting { control: Control::Right, modifier: ControlModifier::Normal }),
+            (21, ControlSetting { control: Control::Down, modifier: ControlModifier::Normal }),
+        ].into_iter().collect()
+    };
+}
+
+impl Default for KeyboardControls {
+    fn default() -> Self {
+        Self {
+            mappings: Self::DEFAULT_MAP()
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ControlSetting {
+    pub control: Control,
+    #[serde(default = "ControlModifier::default")]
+    #[serde(skip_serializing_if = "ControlModifier::is_default")]
+    pub modifier: ControlModifier
+}
+
+#[derive(Copy, Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
+#[repr(u32)]
+#[serde(rename_all = "snake_case")]
+pub enum ControlModifier {
+    #[default]
+    Normal,
+    Rapid
+}
+
+impl ControlModifier {
+    fn is_default(&self) -> bool {
+        self == &ControlModifier::Normal
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[repr(u32)]
+#[serde(rename_all = "snake_case")]
+pub enum Control {
+    A,
+    B,
+    Start,
+    Select,
+
+    Up,
+    Down,
+    Left,
+    Right,
+
+    L,
+    R,
+    X,
+    Y,
+
+    Turbo,
+    Slow,
+    Reset,
+    Pause
+}
+impl Control {
+    pub const fn is_button(self) -> bool {
+        match self {
+            Control::A => true,
+            Control::B => true,
+            Control::Start => true,
+            Control::Select => true,
+            Control::Up => true,
+            Control::Down => true,
+            Control::Left => true,
+            Control::Right => true,
+            Control::L => true,
+            Control::R => true,
+            Control::X => true,
+            Control::Y => true,
+            Control::Turbo => false,
+            Control::Slow => false,
+            Control::Reset => false,
+            Control::Pause => false
+        }
+    }
+
+    pub(crate) const fn set_for_input(&self, input: &mut Input, value: bool) {
+        match self {
+            Control::A => input.a = value,
+            Control::B => input.b = value,
+            Control::Start => input.start = value,
+            Control::Select => input.select = value,
+            Control::Up => input.d_up = value,
+            Control::Down => input.d_down = value,
+            Control::Left => input.d_left = value,
+            Control::Right => input.d_right = value,
+            Control::L => input.l = value,
+            Control::R => input.r = value,
+            Control::X => input.x = value,
+            Control::Y => input.y = value,
+            Control::Turbo => {}
+            Control::Slow => {}
+            Control::Reset => {}
+            Control::Pause => {}
+        }
+    }
+
+    #[inline]
+    pub const fn as_str(self) -> &'static str {
+        let cstr = self.as_c_str();
+        let Ok(str) = cstr.to_str() else {
+            // SAFETY: Trust me bro.
+            unsafe { unreachable_unchecked() }
+        };
+        str
+    }
+
+    pub const fn as_c_str(self) -> &'static CStr {
+        match self {
+            Control::A => c"A",
+            Control::B => c"B",
+            Control::Start => c"start",
+            Control::Select => c"select",
+            Control::Up => c"up",
+            Control::Down => c"down",
+            Control::Left => c"left",
+            Control::Right => c"right",
+            Control::L => c"L",
+            Control::R => c"R",
+            Control::X => c"X",
+            Control::Y => c"Y",
+            Control::Turbo => c"turbo",
+            Control::Slow => c"slow",
+            Control::Reset => c"reset",
+            Control::Pause => c"pause"
+        }
+    }
+}

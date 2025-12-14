@@ -4,6 +4,7 @@ use std::ptr::null;
 use std::slice::from_raw_parts_mut;
 use supershuckie_core::emulator::{Input, ScreenData, ScreenDataEncoding};
 use supershuckie_frontend::{CoreMetadata, SuperShuckieFrontend, SuperShuckieFrontendCallbacks};
+use supershuckie_frontend::settings::ControlSetting;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -63,11 +64,14 @@ pub unsafe extern "C" fn supershuckie_frontend_new(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn supershuckie_frontend_enqueue_input(
+pub unsafe extern "C" fn supershuckie_frontend_key_press(
     frontend: &mut SuperShuckieFrontend,
-    input: &InputC
+    key_code: u8,
+    pressed: bool
 ) {
-    frontend.enqueue_input((*input).into());
+    if let Some(&s) = frontend.get_settings().keyboard_controls.mappings.get(&key_code) {
+        frontend.set_button_input(&s, pressed);
+    };
 }
 
 #[unsafe(no_mangle)]
@@ -151,6 +155,30 @@ pub unsafe extern "C" fn supershuckie_frontend_get_rom_name(
     frontend: &SuperShuckieFrontend
 ) -> *const c_char {
     frontend.get_current_rom_name_c_str().map(|i| i.as_ptr()).unwrap_or(null())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_write_settings(
+    frontend: &SuperShuckieFrontend
+) {
+    frontend.write_settings();
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_get_keyboard_control_setting(
+    frontend: &SuperShuckieFrontend,
+    key_code: u8,
+    setting: *mut ControlSetting
+) -> bool {
+    let Some(s) = frontend.get_settings().keyboard_controls.mappings.get(&key_code) else {
+        return false
+    };
+
+    if !setting.is_null() {
+        unsafe { *setting = *s };
+    }
+
+    true
 }
 
 #[unsafe(no_mangle)]

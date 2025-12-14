@@ -1,6 +1,7 @@
 #include "render_widget.hpp"
 #include "main_window.hpp"
 #include <QGraphicsPixmapItem>
+#include <QKeyEvent>
 
 #include <supershuckie/frontend.h>
 
@@ -59,4 +60,22 @@ void SuperShuckieRenderWidget::force_refresh_screen() {
 void SuperShuckieRenderWidget::refresh_screen(const uint32_t *pixels) {
     this->pixmap.convertFromImage(QImage(reinterpret_cast<const uchar *>(pixels), this->width, this->height, QImage::Format::Format_ARGB32));
     this->pixmap_item->setPixmap(this->pixmap);
+}
+
+void SuperShuckieRenderWidget::keyPressEvent(QKeyEvent *event) {
+    QWidget::keyPressEvent(event);
+    
+    printf("%d\n", (uint8_t)event->key());
+
+    if(this->main_window->frontend != nullptr) {
+        supershuckie_frontend_key_press(this->main_window->frontend, event->key(), true);
+    }
+}
+
+void SuperShuckieRenderWidget::keyReleaseEvent(QKeyEvent *event) {
+    QWidget::keyPressEvent(event);
+
+    if(this->main_window->frontend != nullptr) {
+        supershuckie_frontend_key_press(this->main_window->frontend, event->key(), false);
+    }
 }

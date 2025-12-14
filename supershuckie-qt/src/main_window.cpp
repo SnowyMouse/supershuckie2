@@ -246,10 +246,6 @@ void SuperShuckieMainWindow::refresh_action_states() {
     }
 }
 
-SuperShuckieMainWindow::~SuperShuckieMainWindow() {
-
-}
-
 void SuperShuckieMainWindow::do_open_rom() {
     QFileDialog rom_opener;
     rom_opener.setFileMode(QFileDialog::FileMode::ExistingFile);
@@ -315,9 +311,22 @@ void SuperShuckieMainWindow::set_quick_load_shortcuts() {
 }
 
 void SuperShuckieMainWindow::closeEvent(QCloseEvent *event) {
+    QWidget::closeEvent(event);
+
+    if(this->frontend) {
+        supershuckie_frontend_write_settings(this->frontend);
+    }
+
     // if(!this->try_unload_rom()) {
         // event->ignore();
     // }
+}
+
+SuperShuckieMainWindow::~SuperShuckieMainWindow() {
+    if(this->frontend) {
+        supershuckie_frontend_free(this->frontend);
+        this->frontend = nullptr;
+    }
 }
 
 void SuperShuckieMainWindow::do_record_replay() {

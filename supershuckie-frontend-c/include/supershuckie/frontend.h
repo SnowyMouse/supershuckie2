@@ -64,6 +64,58 @@ struct SuperShuckieFrontendRaw *supershuckie_frontend_new(
     const struct SuperShuckieFrontendCallbacks *callbacks
 );
 
+enum SuperShuckieControlSettingType {
+    SuperShuckieControlSettingType_A,
+    SuperShuckieControlSettingType_B,
+    SuperShuckieControlSettingType_Start,
+    SuperShuckieControlSettingType_Select,
+    SuperShuckieControlSettingType_Up,
+    SuperShuckieControlSettingType_Down,
+    SuperShuckieControlSettingType_Left,
+    SuperShuckieControlSettingType_Right,
+    SuperShuckieControlSettingType_L,
+    SuperShuckieControlSettingType_R,
+    SuperShuckieControlSettingType_X,
+    SuperShuckieControlSettingType_Y,
+    SuperShuckieControlSettingType_Turbo,
+    SuperShuckieControlSettingType_Slow,
+    SuperShuckieControlSettingType_Reset,
+    SuperShuckieControlSettingType_Pause
+};
+
+enum SuperShuckieControlSettingModifier {
+    SuperShuckieControlSettingModifier_Normal,
+    SuperShuckieControlSettingModifier_Rapid
+};
+
+struct SuperShuckieControlSetting {
+    // SuperShuckieControlSettingType
+    uint32_t control_type;
+
+    // SuperShuckieControlSettingModifier
+    uint32_t rapid_fire;
+};
+
+/**
+ * Get the control setting for the given keycode, returning true if a setting is set for the given keycode.
+ *
+ * Setting can be null, in which case, it can be used for just checking if a key code corresponds to a control.
+ */
+bool supershuckie_frontend_get_keyboard_control_setting(
+    struct SuperShuckieFrontendRaw *frontend,
+    uint8_t key_code,
+    SuperShuckieControlSetting *setting
+);
+
+/**
+ * Set the current state for a keyboard key press, if any.
+ */
+void supershuckie_frontend_key_press(
+    struct SuperShuckieFrontendRaw *frontend,
+    uint8_t key_code,
+    bool pressed
+);
+
 /**
  * Set whether or not the frontend is paused.
  */
@@ -87,6 +139,11 @@ bool supershuckie_frontend_load_rom(struct SuperShuckieFrontendRaw *frontend, co
  * If there is a ROM running, return the name. Otherwise, return null.
  */
 const char *supershuckie_frontend_get_rom_name(const struct SuperShuckieFrontendRaw *frontend);
+
+/**
+ * Write settings to the given settings file.
+ */
+void supershuckie_frontend_write_settings(const struct SuperShuckieFrontendRaw *frontend);
 
 /**
  * Return true if there is currently a game running.

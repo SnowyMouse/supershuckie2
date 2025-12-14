@@ -32,6 +32,9 @@ private:
     void rebuild_scene();
     void force_refresh_screen();
     void refresh_screen(const uint32_t *pixels);
+
+    void keyPressEvent(QKeyEvent *event) override;
+    void keyReleaseEvent(QKeyEvent *event) override;
 };
 
 }

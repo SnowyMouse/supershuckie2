@@ -90,7 +90,7 @@ private:
     void refresh_action_states();
     void set_quick_load_shortcuts();
 
-    void closeEvent(QCloseEvent *event);
+    void closeEvent(QCloseEvent *event) override;
 
     bool is_game_running();
 
