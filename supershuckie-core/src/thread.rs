@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 #[cfg(feature = "pokeabyte")]
 use supershuckie_pokeabyte_integration::PokeAByteIntegrationServer;
 use supershuckie_replay_recorder::replay_file::record::ReplayFileRecorderFns;
+use crate::Speed;
 
 /// A non-blocking, threaded wrapper for [`SuperShuckieCore`].
 pub struct ThreadedSuperShuckieCore {
@@ -99,6 +100,16 @@ impl ThreadedSuperShuckieCore {
         let _ = self.sender.send(ThreadCommand::EnqueueInput(input))
             .expect("EnqueueInput - the core thread has crashed");
     }
+
+    /// Set the speed.
+    pub fn set_speed(&self, speed: Speed) {
+        let _ = self.sender.send(ThreadCommand::SetSpeed(speed));
+    }
+
+    /// Set the speed.
+    pub fn hard_reset(&self) {
+        let _ = self.sender.send(ThreadCommand::HardReset);
+    }
 }
 
 impl Drop for ThreadedSuperShuckieCore {
@@ -118,6 +129,8 @@ enum ThreadCommand {
     AttachPokeAByteIntegration(Option<PokeAByteIntegrationServer>),
     AttachReplayFileRecorder(Option<Box<dyn ReplayFileRecorderFns>>),
     EnqueueInput(Input),
+    SetSpeed(Speed),
+    HardReset,
     Close
 }
 
@@ -281,6 +294,12 @@ impl ThreadedSuperShuckieCoreThread {
             }
             ThreadCommand::EnqueueInput(input) => {
                 self.core.enqueue_input(input);
+            }
+            ThreadCommand::SetSpeed(speed) => {
+                self.core.set_speed(speed);
+            }
+            ThreadCommand::HardReset => {
+                self.core.hard_reset();
             }
             ThreadCommand::Close => {
                 unreachable!("handle_command(ThreadCommand::Close) should not happen")

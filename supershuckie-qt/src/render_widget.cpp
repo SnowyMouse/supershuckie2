@@ -65,9 +65,7 @@ void SuperShuckieRenderWidget::refresh_screen(const uint32_t *pixels) {
 void SuperShuckieRenderWidget::keyPressEvent(QKeyEvent *event) {
     QWidget::keyPressEvent(event);
     
-    printf("%d\n", (uint8_t)event->key());
-
-    if(this->main_window->frontend != nullptr) {
+    if(!event->isAutoRepeat() && this->main_window->frontend != nullptr) {
         supershuckie_frontend_key_press(this->main_window->frontend, event->key(), true);
     }
 }

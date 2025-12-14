@@ -59,6 +59,11 @@ pub trait EmulatorCore: Send + 'static {
 
     /// Get the screen(s).
     fn get_screens(&self) -> &[ScreenData];
+
+    /// Hard reset the console.
+    ///
+    /// This simulates instantly turning it off and on.
+    fn hard_reset(&mut self);
 }
 
 /// Amount of time passed when running the emulator core.

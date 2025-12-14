@@ -195,4 +195,9 @@ impl EmulatorCore for GameBoyColor {
         let screen_data = unsafe { &*self.callback_data.screen.get() };
         core::slice::from_ref(screen_data)
     }
+
+    #[inline]
+    fn hard_reset(&mut self) {
+        self.core.reset();
+    }
 }

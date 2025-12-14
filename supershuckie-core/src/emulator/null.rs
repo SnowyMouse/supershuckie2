@@ -76,4 +76,8 @@ impl EmulatorCore for NullEmulatorCore {
     fn get_screens(&self) -> &[ScreenData] {
         core::slice::from_ref(&*NULL_EMULATOR_SCREEN)
     }
+
+    fn hard_reset(&mut self) {
+        
+    }
 }

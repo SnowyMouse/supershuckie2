@@ -14,9 +14,11 @@ use alloc::vec::Vec;
 use core::sync::atomic::{Ordering, AtomicU32};
 use core::num::NonZeroU64;
 use supershuckie_replay_recorder::replay_file::record::ReplayFileRecorderFns;
-use supershuckie_replay_recorder::{ByteVec, Speed, UnsignedInteger};
+use supershuckie_replay_recorder::{ByteVec, UnsignedInteger};
 
 pub mod emulator;
+
+pub use supershuckie_replay_recorder::Speed;
 
 #[cfg(feature = "std")]
 mod thread;
@@ -157,6 +159,12 @@ impl SuperShuckieCore {
         self.core.as_ref()
     }
 
+    /// Set the speed multiplier of the game.
+    pub fn set_speed(&mut self, speed: Speed) {
+        self.game_speed = Speed::from_multiplier_float(speed.into_multiplier_float());
+        self.core.set_speed(speed.into_multiplier_float());
+    }
+
     fn before_run(&mut self) {
         self.update_input();
         self.flush_writes();
@@ -190,6 +198,13 @@ impl SuperShuckieCore {
     /// Enqueue an input for the next frame.
     pub fn enqueue_input(&mut self, input: Input) {
         self.next_input = Some(input);
+    }
+
+    /// Enqueue an input for the next frame.
+    pub fn hard_reset(&mut self) {
+        self.core.hard_reset();
+        self.with_recorder(|recorder| recorder.reset_console());
+        self.mid_frame = false;
     }
 
     /// Set the current rapid fire input.

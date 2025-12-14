@@ -7,7 +7,7 @@ use std::ffi::CStr;
 use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use supershuckie_core::emulator::{EmulatorCore, GameBoyColor, Input, Model, NullEmulatorCore, ScreenData};
-use supershuckie_core::ThreadedSuperShuckieCore;
+use supershuckie_core::{Speed, ThreadedSuperShuckieCore};
 
 const SETTINGS_FILE: &str = "settings.json";
 
@@ -77,7 +77,30 @@ impl SuperShuckieFrontend {
                     // TODO
                 }
             }
+        }
+        else if self.is_game_running() {
+            match control.control {
+                Control::Turbo => self.apply_turbo(pressed.then_some(1.0).unwrap_or(0.0)),
+                Control::Reset => if pressed {
+                    self.core.hard_reset();
+                }
+                Control::Pause => if pressed && self.is_game_running() {
+                    self.set_paused(!self.settings.emulation.paused);
+                }
 
+                Control::A => unreachable!(),
+                Control::B => unreachable!(),
+                Control::Start => unreachable!(),
+                Control::Select => unreachable!(),
+                Control::Up => unreachable!(),
+                Control::Down => unreachable!(),
+                Control::Left => unreachable!(),
+                Control::Right => unreachable!(),
+                Control::L => unreachable!(),
+                Control::R => unreachable!(),
+                Control::X => unreachable!(),
+                Control::Y => unreachable!(),
+            }
         }
     }
 
@@ -196,8 +219,6 @@ impl SuperShuckieFrontend {
                 self.core.start();
             }
         }
-
-        // TODO: persist in config
     }
 
     /// Save the SRAM.
@@ -290,9 +311,17 @@ impl SuperShuckieFrontend {
     fn after_load_rom(&mut self) {
         self.force_refresh_screens();
         self.current_input = Input::default();
+        self.core.set_speed(Speed::from_multiplier_float(self.settings.emulation.base_speed));
         if !self.settings.emulation.paused {
             self.core.start();
         }
+    }
+
+    fn apply_turbo(&mut self, turbo: f64) {
+        let base_speed = self.settings.emulation.base_speed;
+        let max_speed = self.settings.emulation.turbo_speed * base_speed;
+        let total_speed = base_speed + (max_speed - base_speed) * turbo;
+        self.core.set_speed(Speed::from_multiplier_float(total_speed));
     }
 }
 

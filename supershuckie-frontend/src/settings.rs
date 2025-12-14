@@ -50,8 +50,11 @@ pub struct Settings {
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EmulationSettings {
-    #[serde(default = "EmulationSettings::DEFAULT_SPEED")]
-    pub speed: f64,
+    #[serde(default = "EmulationSettings::DEFAULT_BASE_SPEED")]
+    pub base_speed: f64,
+
+    #[serde(default = "EmulationSettings::DEFAULT_TURBO_SPEED")]
+    pub turbo_speed: f64,
 
     #[serde(default = "EmulationSettings::DEFAULT_VIDEO_SCALE")]
     pub video_scale: NonZeroU8,
@@ -61,7 +64,8 @@ pub struct EmulationSettings {
 }
 
 impl EmulationSettings {
-    const DEFAULT_SPEED: fn() -> f64 = || 1.0;
+    const DEFAULT_BASE_SPEED: fn() -> f64 = || 1.0;
+    const DEFAULT_TURBO_SPEED: fn() -> f64 = || 2.0;
     const DEFAULT_VIDEO_SCALE: fn() -> NonZeroU8 = || unsafe { NonZeroU8::new_unchecked(4) };
     const DEFAULT_PAUSED: fn() -> bool = || false;
 }
@@ -69,7 +73,8 @@ impl EmulationSettings {
 impl Default for EmulationSettings {
     fn default() -> Self {
         Self {
-            speed: EmulationSettings::DEFAULT_SPEED(),
+            base_speed: EmulationSettings::DEFAULT_BASE_SPEED(),
+            turbo_speed: EmulationSettings::DEFAULT_TURBO_SPEED(),
             video_scale: EmulationSettings::DEFAULT_VIDEO_SCALE(),
             paused: EmulationSettings::DEFAULT_PAUSED()
         }
@@ -119,7 +124,7 @@ impl KeyboardControls {
             (b' ', ControlSetting { control: Control::Select, modifier: ControlModifier::Normal }),
 
             // TODO: Figure out what the actual key codes for these are
-            (4, ControlSetting { control: Control::Start, modifier: ControlModifier::Normal }), // 
+            (4, ControlSetting { control: Control::Start, modifier: ControlModifier::Normal }),
             (18, ControlSetting { control: Control::Left, modifier: ControlModifier::Normal }),
             (19, ControlSetting { control: Control::Up, modifier: ControlModifier::Normal }),
             (20, ControlSetting { control: Control::Right, modifier: ControlModifier::Normal }),
@@ -179,7 +184,6 @@ pub enum Control {
     Y,
 
     Turbo,
-    Slow,
     Reset,
     Pause
 }
@@ -199,7 +203,6 @@ impl Control {
             Control::X => true,
             Control::Y => true,
             Control::Turbo => false,
-            Control::Slow => false,
             Control::Reset => false,
             Control::Pause => false
         }
@@ -220,7 +223,6 @@ impl Control {
             Control::X => input.x = value,
             Control::Y => input.y = value,
             Control::Turbo => {}
-            Control::Slow => {}
             Control::Reset => {}
             Control::Pause => {}
         }
@@ -251,7 +253,6 @@ impl Control {
             Control::X => c"X",
             Control::Y => c"Y",
             Control::Turbo => c"turbo",
-            Control::Slow => c"slow",
             Control::Reset => c"reset",
             Control::Pause => c"pause"
         }
