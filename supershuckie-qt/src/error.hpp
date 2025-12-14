@@ -8,9 +8,9 @@
     QMessageBox qmb; \
     qmb.setWindowTitle(title); \
     qmb.setIcon(QMessageBox::Icon::Critical); \
-    char error[1024]; \
-    std::snprintf(error, sizeof(error), __VA_ARGS__); \
-    qmb.setText(error); \
+    char ____________error_fmt[1024]; \
+    std::snprintf(____________error_fmt, sizeof(____________error_fmt), __VA_ARGS__); \
+    qmb.setText(____________error_fmt); \
     qmb.exec(); \
 }
 

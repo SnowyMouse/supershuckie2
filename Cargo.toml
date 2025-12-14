@@ -1,9 +1,10 @@
 [workspace]
 members = [
-    "supershuckie-core-c",
     "supershuckie-core",
     "supershuckie-pokeabyte-integration",
-    "supershuckie-replay-recorder"
+    "supershuckie-replay-recorder",
+    "supershuckie-frontend",
+    "supershuckie-frontend-c"
 ]
 resolver = "3"
 
@@ -17,6 +18,7 @@ license = "GPL-3.0-only"
 supershuckie-replay-recorder = { version = "0.1.0", path = "supershuckie-replay-recorder" }
 supershuckie-pokeabyte-integration = { version = "0.1.0", path = "supershuckie-pokeabyte-integration" }
 supershuckie-core = { version = "0.1.0", path = "supershuckie-core" }
+supershuckie-frontend = { version = "0.1.0", path = "supershuckie-frontend" }
 
 num_enum = "0.7.5"
 tinyvec = { version = "1.10.0", features = ["alloc"], default-features = false }

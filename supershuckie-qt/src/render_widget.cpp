@@ -2,6 +2,8 @@
 #include "main_window.hpp"
 #include <QGraphicsPixmapItem>
 
+#include <supershuckie/frontend.h>
+
 using namespace SuperShuckie64;
 
 SuperShuckieRenderWidget::SuperShuckieRenderWidget(SuperShuckieMainWindow *parent): QGraphicsView(parent), main_window(parent) {
@@ -50,16 +52,11 @@ void SuperShuckieRenderWidget::rebuild_scene() {
     this->setScene(this->scene);
 }
 
-void SuperShuckieRenderWidget::refresh_screen(bool force) {
-    bool updated;
-    const auto &screens = this->main_window->core.get_screens(updated);
+void SuperShuckieRenderWidget::force_refresh_screen() {
+    supershuckie_frontend_force_refresh_screens(this->main_window->frontend);
+}
 
-    if(!force && !updated) {
-        return;
-    }
-
-    const auto &first_screen = screens[0];
-    this->pixmap.convertFromImage(QImage(reinterpret_cast<const uchar *>(first_screen.pixels.data()), first_screen.width, first_screen.height, QImage::Format::Format_ARGB32));
+void SuperShuckieRenderWidget::refresh_screen(const uint32_t *pixels) {
+    this->pixmap.convertFromImage(QImage(reinterpret_cast<const uchar *>(pixels), this->width, this->height, QImage::Format::Format_ARGB32));
     this->pixmap_item->setPixmap(this->pixmap);
-
 }

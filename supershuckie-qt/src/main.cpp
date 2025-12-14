@@ -3,8 +3,6 @@
 #include <SDL3/sdl.h>
 #include <QApplication>
 
-#include <supershuckie/supershuckie.hpp>
-
 #include "main_window.hpp"
 
 int main(int argc, char **argv) {

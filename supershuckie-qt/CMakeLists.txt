@@ -7,7 +7,7 @@ project("SuperShuckie"
 
 include(corrosion.cmake)
 
-corrosion_import_crate(MANIFEST_PATH "${CMAKE_SOURCE_DIR}/../supershuckie-core-c/Cargo.toml")
+corrosion_import_crate(MANIFEST_PATH "${CMAKE_SOURCE_DIR}/../supershuckie-frontend-c/Cargo.toml")
 
 set(CMAKE_AUTOMOC ON)
 
@@ -28,12 +28,12 @@ find_package(SDL3 REQUIRED CONFIG REQUIRED COMPONENTS SDL3)
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 
 target_include_directories(supershuckie
-    PRIVATE "${CMAKE_SOURCE_DIR}/../supershuckie-core-c/include"
+    PRIVATE "${CMAKE_SOURCE_DIR}/../supershuckie-frontend-c/include"
 )
 
 target_link_libraries(supershuckie
     PRIVATE Qt6::Widgets
     PRIVATE Qt6::Core
     PRIVATE SDL3::SDL3
-    PUBLIC supershuckie_core_c
+    PUBLIC supershuckie_frontend_c
 )

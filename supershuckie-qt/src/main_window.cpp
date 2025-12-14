@@ -5,6 +5,8 @@
 #include <QCloseEvent>
 #include <QFileDialog>
 
+#include <supershuckie/frontend.h>
+
 #include "../../../../bootrom/cgb/cgb_boot/cgb_boot_fast.hpp"
 
 #include "error.hpp"
@@ -15,7 +17,7 @@
 
 using namespace SuperShuckie64;
 
-SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow(), core(SuperShuckieCore::new_null()) {
+SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
     // Remove rounded corners (Windows)
     #ifdef _WIN32
     DWORD one = 1;
@@ -33,31 +35,35 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow(), core(SuperShuck
     this->ticker.start();
 
     this->set_up_menu();
-    this->try_unload_rom();
+
+    SuperShuckieFrontendCallbacks callbacks = {};
+    callbacks.user_data = this;
+    callbacks.refresh_screens = SuperShuckieMainWindow::on_refresh_screens;
+    callbacks.new_core_metadata = SuperShuckieMainWindow::on_new_core_metadata;
+    this->frontend = supershuckie_frontend_new("./UserData", &callbacks);
 }
 
 void SuperShuckieMainWindow::set_title(const char *title) {
+    std::strncpy(this->title_text, title, sizeof(this->title_text) - 1);
+    this->refresh_title();
+}
+
+void SuperShuckieMainWindow::refresh_title() {
     char fmt[512];
 
-    const char *rom_name = (this->current_rom_name == std::nullopt) ? "No ROM loaded" : this->current_rom_name.value().c_str();
+    const char *rom_name = this->frontend ? supershuckie_frontend_get_rom_name(this->frontend) : "(Frontend not yet loaded)";
+    if(rom_name == nullptr) {
+        rom_name = "No ROM Loaded";
+    };
     
-    if(title == nullptr || title[0] == 0) {
-        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s", rom_name);
+    if(this->title_text[0] == 0) {
+        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s - %.01f FPS", rom_name, this->current_fps);
     }
     else {
-        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s - %s", rom_name, title);
+        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s - %s - %.01f FPS", rom_name, this->title_text, this->current_fps);
     }
 
     this->setWindowTitle(fmt);
-}
-
-void SuperShuckieMainWindow::refresh_screen_dimensions() {
-    bool updated = false;
-
-    const auto &screens = this->core.get_screens(updated);
-    const auto &first_screen = screens[0];
-
-    this->render_widget->set_dimensions(first_screen.width,first_screen.height,this->scale);
 }
 
 void SuperShuckieMainWindow::tick() {
@@ -76,7 +82,16 @@ void SuperShuckieMainWindow::tick() {
         }
     }
 
-    this->render_widget->refresh_screen();
+    auto now = clock::now();
+    auto time_since_last_second_us = std::chrono::duration_cast<std::chrono::microseconds>(now - this->second_start).count();
+    if(time_since_last_second_us > 1105012) {
+        this->current_fps = 1000000.0 * static_cast<double>(this->frames_in_last_second) / static_cast<double>(time_since_last_second_us);
+        this->frames_in_last_second = 0;
+        this->second_start = now;
+        this->refresh_title();
+    }
+
+    supershuckie_frontend_tick(this->frontend);
 }
 
 void SuperShuckieMainWindow::set_up_menu() {
@@ -131,6 +146,7 @@ void SuperShuckieMainWindow::set_up_gameplay_menu() {
     connect(this->reset_console, SIGNAL(triggered()), this, SLOT(do_reset_console()));
 
     this->pause = this->gameplay_menu->addAction("Pause");
+    this->pause->setCheckable(true);
     this->pause->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_P));
     connect(this->pause, SIGNAL(triggered()), this, SLOT(do_toggle_pause()));
 }
@@ -175,7 +191,7 @@ void SuperShuckieMainWindow::set_up_replays_menu() {
 
     this->record_replay->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_R));
     this->resume_replay->setShortcut(QKeyCombination(Qt::ShiftModifier | Qt::ControlModifier, Qt::Key_R));
-    this->play_replay->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_P));
+    this->play_replay->setShortcut(QKeyCombination(Qt::ShiftModifier | Qt::ControlModifier, Qt::Key_P));
 }
 
 void SuperShuckieMainWindow::set_up_settings_menu() {
@@ -183,16 +199,18 @@ void SuperShuckieMainWindow::set_up_settings_menu() {
 }
 
 void SuperShuckieMainWindow::refresh_action_states() {
-    this->gameplay_menu->setEnabled(this->game_loaded);
-    this->replays_menu->setEnabled(this->game_loaded);
-    this->close_rom->setEnabled(this->game_loaded);
+    bool game_loaded = this->is_game_running();
+
+    this->gameplay_menu->setEnabled(game_loaded);
+    this->replays_menu->setEnabled(game_loaded);
+    this->close_rom->setEnabled(game_loaded);
 
     for(auto &state : this->quick_load_save_states) {
-        state->setEnabled(this->game_loaded);
+        state->setEnabled(game_loaded);
     }
 
     for(auto &state : this->quick_save_save_states) {
-        state->setEnabled(this->game_loaded);
+        state->setEnabled(game_loaded);
     }
     
     switch(this->replay_status) {
@@ -248,42 +266,16 @@ void SuperShuckieMainWindow::do_open_rom() {
 }
 
 void SuperShuckieMainWindow::load_rom(const std::filesystem::path &path) {
-    auto extension = path.extension().string();
-    for(char &c : extension) {
-        if(c >= 'A' && c <= 'Z') {
-            c = std::tolower(c);
-        }
-    }
+    char error[256] = "";
 
-    auto file = read_file(path);
-    if(file == std::nullopt) {
-        return;
+    auto path_string = path.string();
+    if(!supershuckie_frontend_load_rom(this->frontend, path.string().c_str(), error, sizeof(error))) {
+        DISPLAY_ERROR_DIALOG("Can't load ROM", "\"%s\" failed to load:\n\n%s", path_string.c_str(), error);
     }
-
-    if(extension == ".gb" || extension == ".gbc") {
-        this->load_gbc(path.filename().string(), file.value());
-    }
-    else if(extension == "" || extension == ".") {
-        DISPLAY_ERROR_DIALOG("Can't load ROM", "\"%s\" does not appear to be a valid ROM file!", path.filename().string().c_str());
-    }
-    else {
-        DISPLAY_ERROR_DIALOG("Can't load ROM", "\"%s\" does not appear to be a valid ROM file!\n\n(unknown extension \"%s\")", path.filename().string().c_str(), extension.c_str());
-    }
-}
-
-void SuperShuckieMainWindow::load_gbc(const std::string &name, const std::vector<std::byte> &data) {
-    if(!this->try_unload_rom()) {
-        return;
-    }
-
-    this->core = SuperShuckieCore::new_from_gameboy(data.data(), data.size(), AUTOGEN_CGB_BOOT_FAST_HPP_VAL, sizeof(AUTOGEN_CGB_BOOT_FAST_HPP_VAL), GameBoyType::GameBoyType__GameBoyColor);
-    this->game_loaded = true;
-    this->current_rom_name = name;
-    this->on_rom_switch();
 }
 
 void SuperShuckieMainWindow::do_close_rom() {
-    this->try_unload_rom();
+    supershuckie_frontend_unload_rom(this->frontend);
 }
 
 void SuperShuckieMainWindow::do_new_game() {
@@ -303,7 +295,7 @@ void SuperShuckieMainWindow::do_reset_console() {
 }
 
 void SuperShuckieMainWindow::do_toggle_pause() {
-    // FIXME
+    supershuckie_frontend_set_paused(this->frontend, this->pause->isChecked());
 }
 
 void SuperShuckieMainWindow::do_toggle_number_row_for_save_states() {
@@ -322,22 +314,10 @@ void SuperShuckieMainWindow::set_quick_load_shortcuts() {
     }
 }
 
-bool SuperShuckieMainWindow::try_unload_rom() {
-    if(this->game_loaded) {
-        this->do_save_game();
-    }
-    
-    this->core = SuperShuckieCore::new_null();
-    this->game_loaded = false;
-    this->current_rom_name = std::nullopt;
-    this->on_rom_switch();
-    return true;
-}
-
 void SuperShuckieMainWindow::closeEvent(QCloseEvent *event) {
-    if(!this->try_unload_rom()) {
-        event->ignore();
-    }
+    // if(!this->try_unload_rom()) {
+        // event->ignore();
+    // }
 }
 
 void SuperShuckieMainWindow::do_record_replay() {
@@ -352,18 +332,31 @@ void SuperShuckieMainWindow::do_play_replay() {
     // FIXME
 }
 
-void SuperShuckieMainWindow::on_rom_switch() {
-    if(this->game_loaded) {
-        this->set_title("Loaded ROM successfully!");
+void SuperShuckieMainWindow::on_refresh_screens(void *user_data, std::size_t screen_count, const uint32_t *const *pixels) {
+    auto *self = reinterpret_cast<SuperShuckieMainWindow *>(user_data);
+    
+    const uint32_t *first_screen = pixels[0];
+    self->frames_in_last_second += 1;
+    self->render_widget->refresh_screen(first_screen);
+}
+
+void SuperShuckieMainWindow::on_new_core_metadata(void *user_data, std::size_t screen_count, const SuperShuckieScreenData *screen_data) {
+    auto *self = reinterpret_cast<SuperShuckieMainWindow *>(user_data);
+    
+    const SuperShuckieScreenData &first_screen = screen_data[0];
+    self->render_widget->set_dimensions(first_screen.width, first_screen.height, self->scale);
+    self->refresh_action_states();
+    self->frames_in_last_second = 0;
+    self->current_fps = 0.0;
+    self->second_start = clock::now();
+    if(self->is_game_running()) {
+        self->set_title("Loaded ROM successfully!");
     }
     else {
-        this->set_title();
+        self->set_title();
     }
-    this->refresh_action_states();
-    this->refresh_screen_dimensions();
-    this->render_widget->refresh_screen(true);
+}
 
-    if(this->game_loaded && !this->pause->isChecked()) {
-        this->core.start();
-    }
+bool SuperShuckieMainWindow::is_game_running() {
+    return this->frontend != nullptr && supershuckie_frontend_is_game_running(this->frontend);
 }

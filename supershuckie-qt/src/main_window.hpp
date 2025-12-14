@@ -4,8 +4,9 @@
 #include <QMainWindow>
 #include <QTimer>
 #include <filesystem>
-
-#include <supershuckie/supershuckie.hpp>
+#include <memory>
+#include <chrono>
+#include <supershuckie/frontend.h>
 
 class QMenu;
 class QAction;
@@ -32,16 +33,16 @@ public:
     void load_rom(const std::filesystem::path &path);
 
 private:
+    typedef std::chrono::steady_clock clock;
+
     void set_title(const char *title = "");
     SuperShuckieRenderWidget *render_widget;
-
-    SuperShuckieCore core;
+    SuperShuckieFrontendRaw *frontend = nullptr;
 
     unsigned scale = 6;
 
     QTimer ticker;
 
-    void refresh_screen_dimensions();
     void tick();
 
     ReplayStatus replay_status = ReplayStatus::NoReplay;
@@ -78,7 +79,6 @@ private:
     QAction *quick_load_save_states[QUICK_SAVE_STATE_COUNT];
     QAction *quick_save_save_states[QUICK_SAVE_STATE_COUNT];
 
-    bool game_loaded = false;
     bool use_number_keys_for_quick_slots = false;
 
     void set_up_file_menu();
@@ -90,14 +90,20 @@ private:
     void refresh_action_states();
     void set_quick_load_shortcuts();
 
-    bool try_unload_rom();
-    void on_rom_switch();
-
     void closeEvent(QCloseEvent *event);
 
-    void load_gbc(const std::string &name, const std::vector<std::byte> &data);
+    bool is_game_running();
 
-    std::optional<std::string> current_rom_name;
+    char title_text[128] = {};
+
+    static void on_refresh_screens(void *user_data, std::size_t screen_count, const uint32_t *const *pixels);
+    static void on_new_core_metadata(void *user_data, std::size_t screen_count, const SuperShuckieScreenData *screen_data);
+
+    std::uint32_t frames_in_last_second = 0;
+    double current_fps = 0.0;
+    clock::time_point second_start;
+    void refresh_title();
+
 
 private slots:
     void do_open_rom();

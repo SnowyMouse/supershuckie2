@@ -30,7 +30,8 @@ private:
     QGraphicsPixmapItem *pixmap_item = nullptr;
 
     void rebuild_scene();
-    void refresh_screen(bool force = false);
+    void force_refresh_screen();
+    void refresh_screen(const uint32_t *pixels);
 };
 
 }
