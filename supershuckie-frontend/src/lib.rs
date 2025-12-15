@@ -259,6 +259,18 @@ impl SuperShuckieFrontend {
         self.update_video_mode();
     }
 
+    /// Set the video scale.
+    #[inline]
+    pub fn set_speed(&mut self, mut base: f64, mut turbo: f64) {
+        base = Speed::from_multiplier_float(base).into_multiplier_float();
+        turbo = Speed::from_multiplier_float(turbo).into_multiplier_float();
+
+        self.settings.emulation.base_speed_multiplier = base;
+        self.settings.emulation.turbo_speed_multiplier = turbo;
+
+        self.apply_turbo(0.0);
+    }
+
     /// Enqueue an input.
     #[inline]
     pub fn enqueue_input(&mut self, input: Input) {

@@ -16,6 +16,7 @@ namespace SuperShuckie64 {
 
 class SuperShuckieRenderWidget;
 class SuperShuckieVideoScaleAction;
+class SuperShuckieGameSpeedDialog;
 
 enum ReplayStatus {
     NoReplay,
@@ -27,6 +28,7 @@ class SuperShuckieMainWindow: public QMainWindow {
     Q_OBJECT
     friend SuperShuckieRenderWidget;
     friend SuperShuckieVideoScaleAction;
+    friend SuperShuckieGameSpeedDialog;
     
 public:
     SuperShuckieMainWindow();
@@ -121,7 +123,7 @@ private slots:
     void do_record_replay();
     void do_resume_replay();
     void do_play_replay();
-    void do_change_scaling(std::uint8_t);
+    void do_open_game_speed_dialog() noexcept;
 };
 
 class SuperShuckieVideoScaleAction: public QAction {

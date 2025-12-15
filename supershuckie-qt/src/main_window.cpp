@@ -11,7 +11,7 @@
 
 #include "error.hpp"
 #include "file_rw.hpp"
-
+#include "game_speed_dialog.hpp"
 #include "render_widget.hpp"
 #include "main_window.hpp"
 
@@ -218,6 +218,9 @@ void SuperShuckieMainWindow::set_up_settings_menu() {
         this->change_video_scale[i - 1] = action;
         action->setCheckable(true);
     }
+
+    auto *game_speed = this->settings_menu->addAction("Game speed...");
+    connect(game_speed, SIGNAL(triggered()), this, SLOT(do_open_game_speed_dialog()));
 }
 
 void SuperShuckieMainWindow::refresh_action_states() {
@@ -396,6 +399,10 @@ bool SuperShuckieMainWindow::is_game_running() {
     return this->frontend != nullptr && supershuckie_frontend_is_game_running(this->frontend);
 }
 
-void SuperShuckieMainWindow::do_change_scaling(std::uint8_t scaling) {
+void SuperShuckieMainWindow::do_open_game_speed_dialog() noexcept {
+    SuperShuckieGameSpeedDialog *dialog = new SuperShuckieGameSpeedDialog(this);
 
+    dialog->exec();
+
+    delete dialog;
 }

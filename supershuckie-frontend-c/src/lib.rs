@@ -191,6 +191,30 @@ pub unsafe extern "C" fn supershuckie_frontend_get_keyboard_control_setting(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_get_speed_settings(
+    frontend: &SuperShuckieFrontend,
+    base: *mut f64,
+    turbo: *mut f64
+) {
+    let emulation_settings = &frontend.get_settings().emulation;
+    if !base.is_null() {
+        unsafe { *base = emulation_settings.base_speed_multiplier };
+    }
+    if !turbo.is_null() {
+        unsafe { *turbo = emulation_settings.turbo_speed_multiplier };
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_set_speed_settings(
+    frontend: &mut SuperShuckieFrontend,
+    base: f64,
+    turbo: f64
+) {
+    frontend.set_speed(base, turbo);
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn supershuckie_frontend_free(
     frontend: *mut SuperShuckieFrontend
 ) {

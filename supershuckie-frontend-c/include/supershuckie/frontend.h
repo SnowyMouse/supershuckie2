@@ -134,6 +134,19 @@ void supershuckie_frontend_force_refresh_screens(struct SuperShuckieFrontendRaw 
 void supershuckie_frontend_set_video_scale(struct SuperShuckieFrontendRaw *frontend, uint8_t scale);
 
 /**
+ * Get the current speed settings.
+ *
+ * Safety:
+ * - base and/or turbo can be null
+ */
+void supershuckie_frontend_get_speed_settings(const struct SuperShuckieFrontendRaw *frontend, double *base, double *turbo);
+
+/**
+ * Set the current speed settings.
+ */
+void supershuckie_frontend_set_speed_settings(struct SuperShuckieFrontendRaw *frontend, double base, double turbo);
+
+/**
  * Load the given ROM, returning true or false depending on whether or not it was successfully loaded.
  *
  * Safety:

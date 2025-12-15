@@ -20,6 +20,7 @@ add_executable(supershuckie ${EXE_TYPE}
     src/main_window.cpp
     src/render_widget.cpp
     src/file_rw.cpp
+    src/game_speed_dialog.cpp
 )
 
 set_property(TARGET supershuckie PROPERTY CXX_STANDARD 20)
