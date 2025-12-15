@@ -15,6 +15,8 @@
 
 using namespace SuperShuckie64;
 
+static const char *USE_NUMBER_KEYS_FOR_QUICK_SLOTS = "number_keys_for_quick_slots";
+
 SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
     // Remove rounded corners (Windows)
     #ifdef _WIN32
@@ -39,6 +41,13 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
     callbacks.refresh_screens = SuperShuckieMainWindow::on_refresh_screens;
     callbacks.change_video_mode = SuperShuckieMainWindow::on_change_video_mode;
     this->frontend = supershuckie_frontend_new("./UserData", &callbacks);
+
+    const char *quick_slots = supershuckie_frontend_get_custom_setting(this->frontend, USE_NUMBER_KEYS_FOR_QUICK_SLOTS);
+    if(quick_slots != nullptr && quick_slots[0] == '1') {
+        this->use_number_keys_for_quick_slots = true;
+        this->use_number_row_for_quick_slots->setChecked(true);
+        this->set_quick_load_shortcuts();
+    }
 }
 
 void SuperShuckieMainWindow::set_title(const char *title) {
@@ -320,7 +329,8 @@ void SuperShuckieMainWindow::do_toggle_pause() {
 void SuperShuckieMainWindow::do_toggle_number_row_for_save_states() {
     this->use_number_keys_for_quick_slots = this->use_number_row_for_quick_slots->isChecked();
     this->set_quick_load_shortcuts();
-    // FIXME: persist to config
+    
+    supershuckie_frontend_set_custom_setting(this->frontend, USE_NUMBER_KEYS_FOR_QUICK_SLOTS, this->use_number_keys_for_quick_slots ? "1" : "0");
 }
 
 void SuperShuckieMainWindow::set_quick_load_shortcuts() {

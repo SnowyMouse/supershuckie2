@@ -147,6 +147,23 @@ void supershuckie_frontend_get_speed_settings(const struct SuperShuckieFrontendR
 void supershuckie_frontend_set_speed_settings(struct SuperShuckieFrontendRaw *frontend, double base, double turbo);
 
 /**
+ * Get the setting, or null if no setting is set.
+ *
+ * Safety:
+ * - setting must not be null
+ * - The returned value may no longer be valid once any future call to this API is made.
+ */
+const char *supershuckie_frontend_get_custom_setting(const struct SuperShuckieFrontendRaw *frontend, const char *setting);
+
+/**
+ * Set the setting to the value, or null to unset.
+ *
+ * Safety:
+ * - setting must not be null
+ */
+void supershuckie_frontend_set_custom_setting(const struct SuperShuckieFrontendRaw *frontend, const char *setting, const char *value);
+
+/**
  * Load the given ROM, returning true or false depending on whether or not it was successfully loaded.
  *
  * Safety:

@@ -6,6 +6,7 @@ use std::slice::from_raw_parts_mut;
 use supershuckie_core::emulator::{Input, ScreenData, ScreenDataEncoding};
 use supershuckie_frontend::{SuperShuckieFrontend, SuperShuckieFrontendCallbacks};
 use supershuckie_frontend::settings::ControlSetting;
+use supershuckie_frontend::util::UTF8CString;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -157,6 +158,33 @@ pub unsafe extern "C" fn supershuckie_frontend_set_video_scale(
     scale: u8
 ) {
     frontend.set_video_scale(NonZeroU8::new(scale).unwrap_or(unsafe { NonZeroU8::new_unchecked(1) }));
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_get_custom_setting(
+    frontend: &SuperShuckieFrontend,
+    setting: *const c_char
+) -> *const c_char {
+    frontend.get_custom_setting(unsafe { CStr::from_ptr(setting) }.to_str().expect("supershuckie_frontend_get_custom_setting bad setting"))
+        .map(|i| i.as_c_str().as_ptr())
+        .unwrap_or(null())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_set_custom_setting(
+    frontend: &mut SuperShuckieFrontend,
+    setting: *const c_char,
+    value: *const c_char
+) {
+    frontend.set_custom_setting(
+        unsafe { CStr::from_ptr(setting) }.to_str().expect("supershuckie_frontend_set_custom_setting bad setting"),
+        if value.is_null() {
+            None
+        }
+        else {
+            Some(UTF8CString::from_cstr(unsafe { CStr::from_ptr(value) }))
+        }
+    );
 }
 
 #[unsafe(no_mangle)]

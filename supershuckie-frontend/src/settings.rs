@@ -9,6 +9,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use supershuckie_core::emulator::Input;
 use crate::SETTINGS_FILE;
+use crate::util::UTF8CString;
 
 pub(crate) fn try_to_init_user_dir_and_get_settings(user_dir: &Path) -> Result<Settings, String> {
     if !user_dir.exists() {
@@ -46,6 +47,10 @@ pub struct Settings {
 
     #[serde(default = "KeyboardControls::default")]
     pub keyboard_controls: KeyboardControls,
+
+    #[serde(default = "BTreeMap::default")]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub custom: BTreeMap<String, UTF8CString>
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

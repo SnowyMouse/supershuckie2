@@ -248,7 +248,6 @@ impl SuperShuckieFrontend {
     }
 
     /// Set the video scale.
-    #[inline]
     pub fn set_video_scale(&mut self, scale: NonZeroU8) {
         let old_scale = &mut self.settings.emulation.video_scale;
         if scale == *old_scale {
@@ -260,7 +259,6 @@ impl SuperShuckieFrontend {
     }
 
     /// Set the video scale.
-    #[inline]
     pub fn set_speed(&mut self, mut base: f64, mut turbo: f64) {
         base = Speed::from_multiplier_float(base).into_multiplier_float();
         turbo = Speed::from_multiplier_float(turbo).into_multiplier_float();
@@ -269,6 +267,19 @@ impl SuperShuckieFrontend {
         self.settings.emulation.turbo_speed_multiplier = turbo;
 
         self.apply_turbo(0.0);
+    }
+
+    /// Set a custom setting.
+    pub fn set_custom_setting(&mut self, setting: &str, value: Option<UTF8CString>) {
+        match value {
+            Some(n) => { self.settings.custom.insert(setting.to_owned(), n); },
+            None => { self.settings.custom.remove(setting); }
+        }
+    }
+
+    /// Get a custom setting.
+    pub fn get_custom_setting(&self, setting: &str) -> Option<&UTF8CString> {
+        self.settings.custom.get(setting)
     }
 
     /// Enqueue an input.
