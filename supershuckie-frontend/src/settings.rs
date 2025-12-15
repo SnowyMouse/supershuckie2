@@ -50,11 +50,11 @@ pub struct Settings {
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EmulationSettings {
-    #[serde(default = "EmulationSettings::DEFAULT_BASE_SPEED")]
-    pub base_speed: f64,
+    #[serde(default = "EmulationSettings::DEFAULT_BASE_SPEED_MULTIPLIER")]
+    pub base_speed_multiplier: f64,
 
-    #[serde(default = "EmulationSettings::DEFAULT_TURBO_SPEED")]
-    pub turbo_speed: f64,
+    #[serde(default = "EmulationSettings::DEFAULT_TURBO_SPEED_MULTIPLIER")]
+    pub turbo_speed_multiplier: f64,
 
     #[serde(default = "EmulationSettings::DEFAULT_VIDEO_SCALE")]
     pub video_scale: NonZeroU8,
@@ -64,8 +64,8 @@ pub struct EmulationSettings {
 }
 
 impl EmulationSettings {
-    const DEFAULT_BASE_SPEED: fn() -> f64 = || 1.0;
-    const DEFAULT_TURBO_SPEED: fn() -> f64 = || 2.0;
+    const DEFAULT_BASE_SPEED_MULTIPLIER: fn() -> f64 = || 1.0;
+    const DEFAULT_TURBO_SPEED_MULTIPLIER: fn() -> f64 = || 2.0;
     const DEFAULT_VIDEO_SCALE: fn() -> NonZeroU8 = || unsafe { NonZeroU8::new_unchecked(4) };
     const DEFAULT_PAUSED: fn() -> bool = || false;
 }
@@ -73,8 +73,8 @@ impl EmulationSettings {
 impl Default for EmulationSettings {
     fn default() -> Self {
         Self {
-            base_speed: EmulationSettings::DEFAULT_BASE_SPEED(),
-            turbo_speed: EmulationSettings::DEFAULT_TURBO_SPEED(),
+            base_speed_multiplier: EmulationSettings::DEFAULT_BASE_SPEED_MULTIPLIER(),
+            turbo_speed_multiplier: EmulationSettings::DEFAULT_TURBO_SPEED_MULTIPLIER(),
             video_scale: EmulationSettings::DEFAULT_VIDEO_SCALE(),
             paused: EmulationSettings::DEFAULT_PAUSED()
         }

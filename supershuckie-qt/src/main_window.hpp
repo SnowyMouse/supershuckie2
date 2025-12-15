@@ -15,6 +15,7 @@ class QCloseEvent;
 namespace SuperShuckie64 {
 
 class SuperShuckieRenderWidget;
+class SuperShuckieVideoScaleAction;
 
 enum ReplayStatus {
     NoReplay,
@@ -25,6 +26,7 @@ enum ReplayStatus {
 class SuperShuckieMainWindow: public QMainWindow {
     Q_OBJECT
     friend SuperShuckieRenderWidget;
+    friend SuperShuckieVideoScaleAction;
     
 public:
     SuperShuckieMainWindow();
@@ -38,8 +40,6 @@ private:
     void set_title(const char *title = "");
     SuperShuckieRenderWidget *render_widget;
     SuperShuckieFrontendRaw *frontend = nullptr;
-
-    unsigned scale = 6;
 
     QTimer ticker;
 
@@ -79,6 +79,10 @@ private:
     QAction *quick_load_save_states[QUICK_SAVE_STATE_COUNT];
     QAction *quick_save_save_states[QUICK_SAVE_STATE_COUNT];
 
+    static const std::size_t VIDEO_SCALE_COUNT = 12;
+
+    SuperShuckieVideoScaleAction *change_video_scale[VIDEO_SCALE_COUNT];
+
     bool use_number_keys_for_quick_slots = false;
 
     void set_up_file_menu();
@@ -97,7 +101,7 @@ private:
     char title_text[128] = {};
 
     static void on_refresh_screens(void *user_data, std::size_t screen_count, const uint32_t *const *pixels);
-    static void on_new_core_metadata(void *user_data, std::size_t screen_count, const SuperShuckieScreenData *screen_data);
+    static void on_change_video_mode(void *user_data, std::size_t screen_count, const SuperShuckieScreenData *screen_data, std::uint8_t scaling);
 
     std::uint32_t frames_in_last_second = 0;
     double current_fps = 0.0;
@@ -117,6 +121,19 @@ private slots:
     void do_record_replay();
     void do_resume_replay();
     void do_play_replay();
+    void do_change_scaling(std::uint8_t);
+};
+
+class SuperShuckieVideoScaleAction: public QAction {
+    Q_OBJECT
+    friend SuperShuckieMainWindow;
+public:
+    SuperShuckieVideoScaleAction(SuperShuckieMainWindow *parent, const char *text, std::uint8_t scale);
+private:
+    std::uint8_t scale;
+    SuperShuckieMainWindow *parent;
+private slots:
+    void activated();
 };
 
 }

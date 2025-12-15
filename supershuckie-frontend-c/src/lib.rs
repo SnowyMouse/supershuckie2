@@ -1,9 +1,10 @@
 use std::ffi::{c_char, c_void, CStr};
 use std::mem::MaybeUninit;
+use std::num::NonZeroU8;
 use std::ptr::null;
 use std::slice::from_raw_parts_mut;
 use supershuckie_core::emulator::{Input, ScreenData, ScreenDataEncoding};
-use supershuckie_frontend::{CoreMetadata, SuperShuckieFrontend, SuperShuckieFrontendCallbacks};
+use supershuckie_frontend::{SuperShuckieFrontend, SuperShuckieFrontendCallbacks};
 use supershuckie_frontend::settings::ControlSetting;
 
 #[repr(C)]
@@ -20,7 +21,7 @@ pub struct SuperShuckieFrontendCallbacksC {
     pub userdata: *mut c_void,
 
     pub refresh_screens: Option<unsafe extern "C" fn(userdata: *mut c_void, screen_count: usize, screen_data: *const *const u32)>,
-    pub new_core_metadata: Option<unsafe extern "C" fn(userdata: *mut c_void, screen_count: usize, screen_data: *const SuperShuckieScreenDataC)>,
+    pub change_video_mode: Option<unsafe extern "C" fn(userdata: *mut c_void, screen_count: usize, screen_data: *const SuperShuckieScreenDataC, screen_scale: NonZeroU8)>,
 }
 
 impl SuperShuckieFrontendCallbacks for SuperShuckieFrontendCallbacksC {
@@ -35,8 +36,8 @@ impl SuperShuckieFrontendCallbacks for SuperShuckieFrontendCallbacksC {
         unsafe { s(self.userdata, screens.len(), screens_buf.as_ptr()) };
     }
 
-    fn new_core_metadata(&mut self, _core_metadata: &CoreMetadata, screens: &[ScreenData]) {
-        let Some(s) = self.new_core_metadata else { return };
+    fn change_video_mode(&mut self, screens: &[ScreenData], scaling: NonZeroU8) {
+        let Some(s) = self.change_video_mode else { return };
 
         let mut screens_buf = [MaybeUninit::<SuperShuckieScreenDataC>::uninit(); 4];
         for (index, screen) in screens.iter().enumerate() {
@@ -47,7 +48,7 @@ impl SuperShuckieFrontendCallbacks for SuperShuckieFrontendCallbacksC {
             });
         }
 
-        unsafe { s(self.userdata, screens.len(), screens_buf.as_ptr() as *const SuperShuckieScreenDataC) };
+        unsafe { s(self.userdata, screens.len(), screens_buf.as_ptr() as *const SuperShuckieScreenDataC, scaling) };
     }
 }
 
@@ -148,6 +149,14 @@ pub unsafe extern "C" fn supershuckie_frontend_force_refresh_screens(
     frontend: &mut SuperShuckieFrontend
 ) {
     frontend.force_refresh_screens();
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_set_video_scale(
+    frontend: &mut SuperShuckieFrontend,
+    scale: u8
+) {
+    frontend.set_video_scale(NonZeroU8::new(scale).unwrap_or(unsafe { NonZeroU8::new_unchecked(1) }));
 }
 
 #[unsafe(no_mangle)]

@@ -44,13 +44,13 @@ struct SuperShuckieScreenData {
 };
 
 typedef void (*SuperShuckieRefreshScreensCallback)(void *user_data, size_t screen_count, const uint32_t *const *pixels);
-typedef void (*SuperShuckieNewCoreMetadataCallback)(void *user_data, size_t screen_count, const struct SuperShuckieScreenData *screen_data);
+typedef void (*SuperShuckieChangeVideoModeCallback)(void *user_data, size_t screen_count, const struct SuperShuckieScreenData *screen_data, uint8_t scaling);
 
 struct SuperShuckieFrontendCallbacks {
     void *user_data;
 
     SuperShuckieRefreshScreensCallback refresh_screens;
-    SuperShuckieNewCoreMetadataCallback new_core_metadata;
+    SuperShuckieChangeVideoModeCallback change_video_mode;
 };
 
 /**
@@ -125,6 +125,13 @@ void supershuckie_frontend_set_paused(struct SuperShuckieFrontendRaw *frontend, 
  * Manually invoke the refresh screens callback even if no updates have occurred.
  */
 void supershuckie_frontend_force_refresh_screens(struct SuperShuckieFrontendRaw *frontend);
+
+/**
+ * Set the video scale.
+ *
+ * If scale is 0, it will default to 1.
+ */
+void supershuckie_frontend_set_video_scale(struct SuperShuckieFrontendRaw *frontend, uint8_t scale);
 
 /**
  * Load the given ROM, returning true or false depending on whether or not it was successfully loaded.

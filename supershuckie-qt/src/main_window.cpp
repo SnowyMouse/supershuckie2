@@ -39,7 +39,7 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
     SuperShuckieFrontendCallbacks callbacks = {};
     callbacks.user_data = this;
     callbacks.refresh_screens = SuperShuckieMainWindow::on_refresh_screens;
-    callbacks.new_core_metadata = SuperShuckieMainWindow::on_new_core_metadata;
+    callbacks.change_video_mode = SuperShuckieMainWindow::on_change_video_mode;
     this->frontend = supershuckie_frontend_new("./UserData", &callbacks);
 }
 
@@ -194,8 +194,30 @@ void SuperShuckieMainWindow::set_up_replays_menu() {
     this->play_replay->setShortcut(QKeyCombination(Qt::ShiftModifier | Qt::ControlModifier, Qt::Key_P));
 }
 
+SuperShuckieVideoScaleAction::SuperShuckieVideoScaleAction(SuperShuckieMainWindow *parent, const char *text, std::uint8_t scale): QAction(text, parent), scale(scale), parent(parent) {
+    connect(this, SIGNAL(triggered()), this, SLOT(activated()));
+}
+
+void SuperShuckieVideoScaleAction::activated() {
+    if(this->parent->frontend == nullptr) {
+        return;
+    }
+    supershuckie_frontend_set_video_scale(this->parent->frontend, this->scale);
+}
+
 void SuperShuckieMainWindow::set_up_settings_menu() {
     this->settings_menu = this->menu_bar->addMenu("Settings");
+    
+    auto *video_scaling = this->settings_menu->addMenu("Video scaling");
+    for(std::size_t i = 1; i <= SuperShuckieMainWindow::VIDEO_SCALE_COUNT; i++) {
+        char fmt[256];
+        std::snprintf(fmt, sizeof(fmt), "%zux", i);
+
+        auto *action = new SuperShuckieVideoScaleAction(this, fmt, static_cast<uint8_t>(i));
+        video_scaling->addAction(action);
+        this->change_video_scale[i - 1] = action;
+        action->setCheckable(true);
+    }
 }
 
 void SuperShuckieMainWindow::refresh_action_states() {
@@ -349,11 +371,11 @@ void SuperShuckieMainWindow::on_refresh_screens(void *user_data, std::size_t scr
     self->render_widget->refresh_screen(first_screen);
 }
 
-void SuperShuckieMainWindow::on_new_core_metadata(void *user_data, std::size_t screen_count, const SuperShuckieScreenData *screen_data) {
+void SuperShuckieMainWindow::on_change_video_mode(void *user_data, std::size_t screen_count, const SuperShuckieScreenData *screen_data, std::uint8_t video_scale) {
     auto *self = reinterpret_cast<SuperShuckieMainWindow *>(user_data);
     
     const SuperShuckieScreenData &first_screen = screen_data[0];
-    self->render_widget->set_dimensions(first_screen.width, first_screen.height, self->scale);
+    self->render_widget->set_dimensions(first_screen.width, first_screen.height, video_scale);
     self->refresh_action_states();
     self->frames_in_last_second = 0;
     self->current_fps = 0.0;
@@ -364,8 +386,16 @@ void SuperShuckieMainWindow::on_new_core_metadata(void *user_data, std::size_t s
     else {
         self->set_title();
     }
+
+    for(auto &scale : self->change_video_scale) {
+        scale->setChecked(scale->scale == video_scale);
+    }
 }
 
 bool SuperShuckieMainWindow::is_game_running() {
     return this->frontend != nullptr && supershuckie_frontend_is_game_running(this->frontend);
+}
+
+void SuperShuckieMainWindow::do_change_scaling(std::uint8_t scaling) {
+
 }

@@ -4,7 +4,7 @@ pub mod settings;
 use crate::settings::*;
 use crate::util::UTF8CString;
 use std::ffi::CStr;
-use std::io::{Read, Seek};
+use std::num::NonZeroU8;
 use std::path::{Path, PathBuf};
 use supershuckie_core::emulator::{EmulatorCore, GameBoyColor, Input, Model, NullEmulatorCore, ScreenData};
 use supershuckie_core::{Speed, ThreadedSuperShuckieCore};
@@ -17,7 +17,6 @@ pub enum SuperShuckieEmulatorType {
     GameBoyColor
 }
 
-#[expect(dead_code)]
 pub struct SuperShuckieFrontend {
     core: ThreadedSuperShuckieCore,
     core_metadata: CoreMetadata,
@@ -248,6 +247,18 @@ impl SuperShuckieFrontend {
         self.refresh_screen(true);
     }
 
+    /// Set the video scale.
+    #[inline]
+    pub fn set_video_scale(&mut self, scale: NonZeroU8) {
+        let old_scale = &mut self.settings.emulation.video_scale;
+        if scale == *old_scale {
+            return
+        }
+
+        *old_scale = scale;
+        self.update_video_mode();
+    }
+
     /// Enqueue an input.
     #[inline]
     pub fn enqueue_input(&mut self, input: Input) {
@@ -303,23 +314,27 @@ impl SuperShuckieFrontend {
     }
 
     fn after_switch_core(&mut self) {
+        self.update_video_mode();
+    }
+
+    fn update_video_mode(&mut self) {
         self.core.read_screens(|screens| {
-            self.callbacks.new_core_metadata(&self.core_metadata, screens);
+            self.callbacks.change_video_mode(screens, self.settings.emulation.video_scale);
         });
     }
 
     fn after_load_rom(&mut self) {
         self.force_refresh_screens();
         self.current_input = Input::default();
-        self.core.set_speed(Speed::from_multiplier_float(self.settings.emulation.base_speed));
+        self.core.set_speed(Speed::from_multiplier_float(self.settings.emulation.base_speed_multiplier));
         if !self.settings.emulation.paused {
             self.core.start();
         }
     }
 
     fn apply_turbo(&mut self, turbo: f64) {
-        let base_speed = self.settings.emulation.base_speed;
-        let max_speed = self.settings.emulation.turbo_speed * base_speed;
+        let base_speed = self.settings.emulation.base_speed_multiplier;
+        let max_speed = self.settings.emulation.turbo_speed_multiplier * base_speed;
         let total_speed = base_speed + (max_speed - base_speed) * turbo;
         self.core.set_speed(Speed::from_multiplier_float(total_speed));
     }
@@ -331,7 +346,7 @@ pub struct CoreMetadata {
 
 pub trait SuperShuckieFrontendCallbacks {
     fn refresh_screens(&mut self, screens: &[ScreenData]);
-    fn new_core_metadata(&mut self, core_metadata: &CoreMetadata, screens: &[ScreenData]);
+    fn change_video_mode(&mut self, screens: &[ScreenData], screen_scaling: NonZeroU8);
 }
 
 fn _ensure_callbacks_are_object_safe(_: Box<dyn SuperShuckieFrontendCallbacks>) {}
