@@ -7,8 +7,6 @@
 
 #include <supershuckie/frontend.h>
 
-#include "../../../../bootrom/cgb/cgb_boot/cgb_boot_fast.hpp"
-
 #include "error.hpp"
 #include "file_rw.hpp"
 #include "game_speed_dialog.hpp"
