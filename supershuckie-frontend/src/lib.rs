@@ -4,10 +4,10 @@ pub mod settings;
 use crate::settings::*;
 use crate::util::UTF8CString;
 use std::ffi::CStr;
-use std::num::NonZeroU8;
+use std::num::{NonZeroU64, NonZeroU8};
 use std::path::{Path, PathBuf};
 use supershuckie_core::emulator::{EmulatorCore, GameBoyColor, Input, Model, NullEmulatorCore, ScreenData};
-use supershuckie_core::{Speed, ThreadedSuperShuckieCore};
+use supershuckie_core::{Speed, SuperShuckieRapidFire, ThreadedSuperShuckieCore};
 
 const SETTINGS_FILE: &str = "settings.json";
 
@@ -29,6 +29,7 @@ pub struct SuperShuckieFrontend {
     loaded_rom_data: Option<Vec<u8>>,
 
     current_input: Input,
+    current_rapid_fire_input: Option<SuperShuckieRapidFire>,
 
     rom_name: Option<UTF8CString>,
     save_file: Option<UTF8CString>,
@@ -51,6 +52,7 @@ impl SuperShuckieFrontend {
             save_file: None,
             loaded_rom_data: None,
             frame_count: 0,
+            current_rapid_fire_input: None,
             callbacks,
             settings,
             current_input: Input::default(),
@@ -73,7 +75,23 @@ impl SuperShuckieFrontend {
                     self.core.enqueue_input(self.current_input);
                 },
                 ControlModifier::Rapid => {
-                    // TODO
+                    if self.current_rapid_fire_input.is_none() {
+                        if !pressed {
+                            return
+                        }
+
+                        let mut new_rapid_fire = SuperShuckieRapidFire::default();
+                        new_rapid_fire.hold_length = unsafe { NonZeroU64::new_unchecked(3) };
+                        new_rapid_fire.interval = unsafe { NonZeroU64::new_unchecked(3) };
+                        self.current_rapid_fire_input = Some(new_rapid_fire);
+                    }
+
+                    let Some(input) = self.current_rapid_fire_input.as_mut() else { unreachable!("we just enabled rapid fire input...!") };
+                    control.control.set_for_input(&mut input.input, pressed);
+                    if !pressed && input.input == Default::default() {
+                        self.current_rapid_fire_input = None;
+                    }
+                    self.core.set_rapid_fire_input(self.current_rapid_fire_input);
                 }
             }
         }

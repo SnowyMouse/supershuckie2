@@ -1,5 +1,5 @@
 use crate::emulator::{EmulatorCore, Input, ScreenData};
-use crate::SuperShuckieCore;
+use crate::{SuperShuckieCore, SuperShuckieRapidFire};
 use std::boxed::Box;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, TryLockError, Weak};
@@ -110,6 +110,11 @@ impl ThreadedSuperShuckieCore {
     pub fn hard_reset(&self) {
         let _ = self.sender.send(ThreadCommand::HardReset);
     }
+
+    /// Set the rapid fire input.
+    pub fn set_rapid_fire_input(&self, input: Option<SuperShuckieRapidFire>) {
+        let _ = self.sender.send(ThreadCommand::SetRapidFireInput(input));
+    }
 }
 
 impl Drop for ThreadedSuperShuckieCore {
@@ -129,6 +134,7 @@ enum ThreadCommand {
     AttachPokeAByteIntegration(Option<PokeAByteIntegrationServer>),
     AttachReplayFileRecorder(Option<Box<dyn ReplayFileRecorderFns>>),
     EnqueueInput(Input),
+    SetRapidFireInput(Option<SuperShuckieRapidFire>),
     SetSpeed(Speed),
     HardReset,
     Close
@@ -297,6 +303,9 @@ impl ThreadedSuperShuckieCoreThread {
             }
             ThreadCommand::SetSpeed(speed) => {
                 self.core.set_speed(speed);
+            }
+            ThreadCommand::SetRapidFireInput(input) => {
+                self.core.set_rapid_fire_input(input);
             }
             ThreadCommand::HardReset => {
                 self.core.hard_reset();
