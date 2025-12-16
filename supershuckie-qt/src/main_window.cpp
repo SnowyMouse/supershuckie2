@@ -16,6 +16,7 @@
 using namespace SuperShuckie64;
 
 static const char *USE_NUMBER_KEYS_FOR_QUICK_SLOTS = "number_keys_for_quick_slots";
+static const char *WINDOW_XY = "window_xy";
 
 SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
     // Remove rounded corners (Windows)
@@ -47,6 +48,18 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
         this->use_number_keys_for_quick_slots = true;
         this->use_number_row_for_quick_slots->setChecked(true);
         this->set_quick_load_shortcuts();
+    }
+
+    const char *xy = supershuckie_frontend_get_custom_setting(this->frontend, WINDOW_XY);
+    if(xy != nullptr) {
+        int x;
+        int y;
+        if(std::sscanf(xy, "%d|%d", &x, &y) == 2) {
+            auto geometry = this->geometry();
+            geometry.setX(x);
+            geometry.setY(y);
+            this->setGeometry(geometry);
+        }
     }
 }
 
@@ -347,6 +360,11 @@ void SuperShuckieMainWindow::closeEvent(QCloseEvent *event) {
     QWidget::closeEvent(event);
 
     if(this->frontend) {
+        char xy[256];
+        auto geometry = this->geometry();
+        std::snprintf(xy, sizeof(xy), "%d|%d", geometry.x(), geometry.y());
+        supershuckie_frontend_set_custom_setting(this->frontend, WINDOW_XY, xy);
+        
         supershuckie_frontend_write_settings(this->frontend);
     }
 
