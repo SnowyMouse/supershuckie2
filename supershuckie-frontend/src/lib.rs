@@ -30,6 +30,7 @@ pub struct SuperShuckieFrontend {
 
     current_input: Input,
     current_rapid_fire_input: Option<SuperShuckieRapidFire>,
+    current_toggled_input: Option<Input>,
 
     rom_name: Option<UTF8CString>,
     save_file: Option<UTF8CString>,
@@ -53,6 +54,7 @@ impl SuperShuckieFrontend {
             loaded_rom_data: None,
             frame_count: 0,
             current_rapid_fire_input: None,
+            current_toggled_input: None,
             callbacks,
             settings,
             current_input: Input::default(),
@@ -88,10 +90,26 @@ impl SuperShuckieFrontend {
 
                     let Some(input) = self.current_rapid_fire_input.as_mut() else { unreachable!("we just enabled rapid fire input...!") };
                     control.control.set_for_input(&mut input.input, pressed);
-                    if !pressed && input.input == Default::default() {
+                    if !pressed && input.input.is_empty() {
                         self.current_rapid_fire_input = None;
                     }
                     self.core.set_rapid_fire_input(self.current_rapid_fire_input);
+                },
+                ControlModifier::Toggle => {
+                    if !pressed {
+                        return
+                    }
+                    
+                    if self.current_toggled_input.is_none() {
+                        self.current_toggled_input = Some(Input::new());
+                    }
+
+                    let Some(input) = self.current_toggled_input.as_mut() else { unreachable!("we just enabled toggled input...!") };
+                    control.control.invert_for_input(input);
+                    if !pressed && input.is_empty() {
+                        self.current_toggled_input = None;
+                    }
+                    self.core.set_toggled_input(self.current_toggled_input);
                 }
             }
         }

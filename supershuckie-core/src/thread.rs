@@ -115,6 +115,11 @@ impl ThreadedSuperShuckieCore {
     pub fn set_rapid_fire_input(&self, input: Option<SuperShuckieRapidFire>) {
         let _ = self.sender.send(ThreadCommand::SetRapidFireInput(input));
     }
+
+    /// Set the toggle input.
+    pub fn set_toggled_input(&self, input: Option<Input>) {
+        let _ = self.sender.send(ThreadCommand::SetToggledInput(input));
+    }
 }
 
 impl Drop for ThreadedSuperShuckieCore {
@@ -135,6 +140,7 @@ enum ThreadCommand {
     AttachReplayFileRecorder(Option<Box<dyn ReplayFileRecorderFns>>),
     EnqueueInput(Input),
     SetRapidFireInput(Option<SuperShuckieRapidFire>),
+    SetToggledInput(Option<Input>),
     SetSpeed(Speed),
     HardReset,
     Close
@@ -306,6 +312,9 @@ impl ThreadedSuperShuckieCoreThread {
             }
             ThreadCommand::SetRapidFireInput(input) => {
                 self.core.set_rapid_fire_input(input);
+            }
+            ThreadCommand::SetToggledInput(input) => {
+                self.core.set_toggled_input(input);
             }
             ThreadCommand::HardReset => {
                 self.core.hard_reset();

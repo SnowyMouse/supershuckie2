@@ -77,7 +77,7 @@ pub struct RunTime {
 }
 
 /// Describes a current input state.
-#[derive(Copy, Clone, PartialEq, Debug, Default)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 #[allow(missing_docs)]
 pub struct Input {
     pub a: bool,
@@ -96,6 +96,53 @@ pub struct Input {
     pub y: bool,
 
     pub touch: Option<(u16, u16)>
+}
+
+impl Default for Input {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Input {
+    /// Instantiate an empty input.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            a: false,
+            b: false,
+            start: false,
+            select: false,
+            d_up: false,
+            d_down: false,
+            d_left: false,
+            d_right: false,
+            l: false,
+            r: false,
+            x: false,
+            y: false,
+            touch: None,
+        }
+    }
+
+    /// Return true if the input is empty.
+    #[inline]
+    pub const fn is_empty(&self) -> bool {
+        !self.a
+        && !self.b
+        && !self.start
+        && !self.select
+        && !self.d_up
+        && !self.d_down
+        && !self.d_left
+        && !self.d_right
+        && !self.l
+        && !self.r
+        && !self.x
+        && !self.y
+        && self.touch.is_none()
+    }
 }
 
 impl core::ops::BitOr<Input> for Input {

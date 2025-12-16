@@ -160,7 +160,8 @@ pub struct ControlSetting {
 pub enum ControlModifier {
     #[default]
     Normal,
-    Rapid
+    Rapid,
+    Toggle
 }
 
 impl ControlModifier {
@@ -227,6 +228,26 @@ impl Control {
             Control::R => input.r = value,
             Control::X => input.x = value,
             Control::Y => input.y = value,
+            Control::Turbo => {}
+            Control::Reset => {}
+            Control::Pause => {}
+        }
+    }
+
+    pub(crate) const fn invert_for_input(&self, input: &mut Input) {
+        match self {
+            Control::A => input.a = !input.a,
+            Control::B => input.b = !input.b,
+            Control::Start => input.start = !input.start,
+            Control::Select => input.select = !input.select,
+            Control::Up => input.d_up = !input.d_up,
+            Control::Down => input.d_down = !input.d_down,
+            Control::Left => input.d_left = !input.d_left,
+            Control::Right => input.d_right = !input.d_right,
+            Control::L => input.l = !input.l,
+            Control::R => input.r = !input.r,
+            Control::X => input.x = !input.x,
+            Control::Y => input.y = !input.y,
             Control::Turbo => {}
             Control::Reset => {}
             Control::Pause => {}
