@@ -26,7 +26,7 @@ SuperShuckieGameSpeedDialog::SuperShuckieGameSpeedDialog(SuperShuckieMainWindow 
     QGridLayout *layout = new QGridLayout(this);
 
     layout->addWidget(new QLabel("Base speed", this), 0, 0, Qt::AlignLeft);
-    layout->addWidget(new QLabel("Turbo speed", this), 1, 0, Qt::AlignLeft);
+    layout->addWidget(new QLabel("Turbo modifier", this), 1, 0, Qt::AlignLeft);
 
     this->base_speed_slider = new QSpinBox(this);
     this->turbo_speed_slider = new QSpinBox(this);
@@ -54,11 +54,11 @@ SuperShuckieGameSpeedDialog::SuperShuckieGameSpeedDialog(SuperShuckieMainWindow 
     connect(this->base_speed_slider, SIGNAL(valueChanged(int)), this, SLOT(do_update_speed()));
     connect(this->turbo_speed_slider, SIGNAL(valueChanged(int)), this, SLOT(do_update_speed()));
 
-    layout->setColumnStretch(0, 0);
+    layout->setColumnStretch(0, 1);
     layout->setColumnStretch(1, 0);
     layout->setColumnStretch(2, 1);
 
-    QLabel *note = new QLabel("Notes:\n- Turbo speed is applied on top of base speed.\n- Actual game performance may vary.", this);
+    QLabel *note = new QLabel("Notes:\n• Turbo speed = base speed × turbo modifier\n• Actual game performance may vary.", this);
     note->setAttribute(Qt::WA_MacSmallSize);
     layout->addWidget(note, 10, 0, 1, 3, Qt::AlignLeft);
 
