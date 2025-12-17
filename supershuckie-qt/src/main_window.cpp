@@ -77,10 +77,10 @@ void SuperShuckieMainWindow::refresh_title() {
     };
     
     if(this->title_text[0] == 0) {
-        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s - %.01f FPS", rom_name, this->current_fps);
+        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s - %.00f FPS", rom_name, this->current_fps);
     }
     else {
-        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s - %s - %.01f FPS", rom_name, this->title_text, this->current_fps);
+        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s - %s - %.00f FPS", rom_name, this->title_text, this->current_fps);
     }
 
     this->setWindowTitle(fmt);
@@ -104,7 +104,7 @@ void SuperShuckieMainWindow::tick() {
 
     auto now = clock::now();
     auto time_since_last_second_us = std::chrono::duration_cast<std::chrono::microseconds>(now - this->second_start).count();
-    if(time_since_last_second_us > 1105012) {
+    if(time_since_last_second_us > 1000000) {
         this->current_fps = 1000000.0 * static_cast<double>(this->frames_in_last_second) / static_cast<double>(time_since_last_second_us);
         this->frames_in_last_second = 0;
         this->second_start = now;
