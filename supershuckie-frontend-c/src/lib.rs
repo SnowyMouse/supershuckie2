@@ -99,13 +99,20 @@ pub unsafe extern "C" fn supershuckie_frontend_load_rom(
     error_len: usize
 ) -> bool {
     let path = unsafe { CStr::from_ptr(path) };
-    if let Err(e) = frontend.load_rom(path.to_str().expect("supershuckie_frontend_load_rom with non-UTF-8 path")) {
+    if error_len > 0 && let Err(e) = frontend.load_rom(path.to_str().expect("supershuckie_frontend_load_rom with non-UTF-8 path")) {
         write_str_to_data(e.as_str(), unsafe { from_raw_parts_mut(error, error_len) });
         false
     }
     else {
         true
     }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_close_rom(
+    frontend: &mut SuperShuckieFrontend
+) {
+    let _ = frontend.close_rom();
 }
 
 #[unsafe(no_mangle)]
@@ -217,6 +224,23 @@ pub unsafe extern "C" fn supershuckie_frontend_load_save_state(
             }
             false
         }
+        Err(_) if error_len == 0 => false,
+        Err(e) => {
+            write_str_to_data(e.as_str(), unsafe { from_raw_parts_mut(error, error_len) });
+            false
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_save_sram(
+    frontend: &mut SuperShuckieFrontend,
+    error: *mut u8,
+    error_len: usize
+) -> bool {
+    match frontend.save_sram() {
+        Ok(_) => true,
+        Err(_) if error_len == 0 => false,
         Err(e) => {
             write_str_to_data(e.as_str(), unsafe { from_raw_parts_mut(error, error_len) });
             false

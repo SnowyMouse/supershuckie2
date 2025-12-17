@@ -11,6 +11,7 @@ use supershuckie_core::{Speed, SuperShuckieRapidFire, ThreadedSuperShuckieCore};
 
 const SETTINGS_FILE: &str = "settings.json";
 const SAVE_STATE_EXTENSION: &str = "save_state";
+const SAVE_DATA_EXTENSION: &str = "sav";
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum SuperShuckieEmulatorType {
@@ -285,7 +286,7 @@ impl SuperShuckieFrontend {
         };
 
         self.create_userdata_for_rom(filename)?;
-        self.unload_rom();
+        self.close_rom();
         self.loaded_rom_data = Some(data);
         self.rom_name = Some(UTF8CString::from_str(filename));
         self.core_metadata.emulator_type = Some(emulator_to_use);
@@ -294,7 +295,7 @@ impl SuperShuckieFrontend {
         Ok(())
     }
 
-    fn create_userdata_for_rom(&mut self, filename: &str) -> Result<(), UTF8CString> {
+    fn create_userdata_for_rom(&mut self, rom: &str) -> Result<(), UTF8CString> {
         fn create_if_not_dir(what: &Path) -> Result<(), UTF8CString> {
             if !what.is_dir() && let Err(e) = std::fs::create_dir(what) {
                 return Err(format!("Failed to create userdata dir for {}: {e}", what.display()).into());
@@ -302,24 +303,24 @@ impl SuperShuckieFrontend {
             Ok(())
         }
 
-        create_if_not_dir(&self.get_userdir_for_rom(filename))?;
-        create_if_not_dir(&self.get_save_states_dir_for_rom(filename))?;
-        create_if_not_dir(&self.get_save_data_dir_for_rom(filename))?;
-        create_if_not_dir(&self.get_replays_dir_for_rom(filename))?;
+        create_if_not_dir(&self.get_userdir_for_rom(rom))?;
+        create_if_not_dir(&self.get_save_states_dir_for_rom(rom))?;
+        create_if_not_dir(&self.get_save_data_dir_for_rom(rom))?;
+        create_if_not_dir(&self.get_replays_dir_for_rom(rom))?;
 
         Ok(())
     }
 
-    fn get_save_states_dir_for_rom(&self, filename: &str) -> PathBuf {
-        self.get_userdir_for_rom(filename).join("save states")
+    fn get_save_states_dir_for_rom(&self, rom: &str) -> PathBuf {
+        self.get_userdir_for_rom(rom).join("save states")
     }
 
-    fn get_save_data_dir_for_rom(&self, filename: &str) -> PathBuf {
-        self.get_userdir_for_rom(filename).join("save data")
+    fn get_save_data_dir_for_rom(&self, rom: &str) -> PathBuf {
+        self.get_userdir_for_rom(rom).join("save data")
     }
 
-    fn get_replays_dir_for_rom(&self, filename: &str) -> PathBuf {
-        self.get_userdir_for_rom(filename).join("replays")
+    fn get_replays_dir_for_rom(&self, rom: &str) -> PathBuf {
+        self.get_userdir_for_rom(rom).join("replays")
     }
 
     fn get_userdir_for_rom(&self, filename: &str) -> PathBuf {
@@ -327,14 +328,17 @@ impl SuperShuckieFrontend {
     }
 
     fn reload_rom_in_place(&mut self) {
+        self.reset_save_state_history();
+
         let emulator_type = self.core_metadata.emulator_type.expect("reload_rom_in_place with no emulator type");
         let rom_name = self.get_current_rom_name().expect("reload_rom_in_place with no loaded ROM");
         let save_file = self.get_current_save_name().expect("reload_rom_in_place with no save file");
         let save_file_data = self.get_save_file_data(rom_name, save_file);
         let rom_data = self.loaded_rom_data.as_ref().map(|i| i.as_slice()).expect("reload_rom_in_place with no loaded rom");
         let core = self.make_new_core(rom_data, save_file_data, emulator_type);
-        self.reset_save_state_history();
-        self.set_core_in_place(core);
+        self.core = ThreadedSuperShuckieCore::new(core);
+        self.after_switch_core();
+        self.after_load_rom();
     }
 
     fn reset_save_state_history(&mut self) {
@@ -357,23 +361,16 @@ impl SuperShuckieFrontend {
         core
     }
 
-    fn set_core_in_place(&mut self, core: Box<dyn EmulatorCore>) {
-        self.before_unload_rom();
-        self.core = ThreadedSuperShuckieCore::new(core);
-        self.after_switch_core();
-        self.after_load_rom();
-    }
-
     #[expect(unused_variables)]
-    fn get_current_save_file_name_for_rom(&self, filename: &str) -> UTF8CString {
+    fn get_current_save_file_name_for_rom(&self, rom: &str) -> UTF8CString {
         // TODO (stub); this should persist for the given ROM
         UTF8CString::from_str("default")
     }
 
-    #[expect(unused_variables)]
-    fn get_save_file_data(&self, filename: &str, save_file: &str) -> Option<Vec<u8>> {
-        // TODO (stub); this should persist for the given ROM
-        None
+    fn get_save_file_data(&self, rom: &str, save_file: &str) -> Option<Vec<u8>> {
+        let save_file = self.get_save_data_dir_for_rom(rom)
+            .join(format!("{save_file}.{SAVE_DATA_EXTENSION}"));
+        std::fs::read(save_file).ok()
     }
 
     fn get_bios_for_core(&self, emulator_kind: SuperShuckieEmulatorType) -> Vec<u8> {
@@ -384,6 +381,13 @@ impl SuperShuckieFrontend {
         }
     }
 
+    /// Close the ROM, saving.
+    pub fn close_rom(&mut self) {
+        self.save_sram_unchecked();
+        self.unload_rom();
+    }
+
+    /// Unload the ROM without saving.
     pub fn unload_rom(&mut self) {
         self.before_unload_rom();
         self.core = ThreadedSuperShuckieCore::new(Box::new(NullEmulatorCore));
@@ -410,18 +414,22 @@ impl SuperShuckieFrontend {
     }
 
     /// Save the SRAM.
-    ///
-    /// No-op if `!self.is_game_running()`
-    #[expect(unused_variables)]
-    pub fn save_sram(&self) {
+    pub fn save_sram(&mut self) -> Result<(), UTF8CString> {
         if !self.is_game_running() {
-            return
+            return Err("Game not running".into())
         }
 
         let current_rom = self.get_current_rom_name().expect("save_sram with no current ROM");
-        let current_save = self.get_current_rom_name().expect("save_sram with no current save");
+        let current_save = self.get_current_save_name().expect("save_sram with no current save");
 
-        // TODO
+        let sram = self.core.get_sram().expect("save_sram failed to get sram (BUG!)");
+        let save_file = self.get_save_data_dir_for_rom(current_rom).join(format!("{current_save}.{SAVE_DATA_EXTENSION}"));
+
+        std::fs::write(&save_file, sram).map_err(|e| format!("Failed to write SRAM to disk: {e}").into())
+    }
+
+    fn save_sram_unchecked(&mut self) {
+        let _ = self.save_sram();
     }
 
     /// Return `true` if a ROM is running.
@@ -516,11 +524,11 @@ impl SuperShuckieFrontend {
     }
 
     fn before_unload_rom(&mut self) {
+        self.reset_save_state_history();
+
         if !self.is_game_running() {
             return
         }
-
-        self.save_sram();
 
         // probably have to stop replay recording, etc.
     }

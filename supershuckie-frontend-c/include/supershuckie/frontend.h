@@ -183,7 +183,7 @@ bool supershuckie_frontend_create_save_state(struct SuperShuckieFrontendRaw *fro
  *
  * Safety:
  * - name must not be null
- * - error must not be null and must be at least result_len bytes long.
+ * - error must be at least result_len bytes long.
  */
 bool supershuckie_frontend_load_save_state(struct SuperShuckieFrontendRaw *frontend, const char *name, char *error, size_t error_len);
 
@@ -211,6 +211,15 @@ bool supershuckie_frontend_redo_load_save_state(struct SuperShuckieFrontendRaw *
 bool supershuckie_frontend_load_rom(struct SuperShuckieFrontendRaw *frontend, const char *path, char *error, size_t error_len);
 
 /**
+ * Write SRAM to disk, returning true if successful.
+ *
+ * Safety:
+ * - error must be at least result_len bytes long.
+ */
+bool supershuckie_frontend_save_sram(struct SuperShuckieFrontendRaw *frontend, char *error, size_t error_len);
+
+
+/**
  * If there is a ROM running, return the name. Otherwise, return null.
  */
 const char *supershuckie_frontend_get_rom_name(const struct SuperShuckieFrontendRaw *frontend);
@@ -227,6 +236,15 @@ bool supershuckie_frontend_is_game_running(const struct SuperShuckieFrontendRaw 
 
 /**
  * Unload the current ROM, if any.
+ *
+ * Will also try to save the SRAM.
+ */
+void supershuckie_frontend_close_rom(struct SuperShuckieFrontendRaw *frontend);
+
+/**
+ * Unload the current ROM, if any.
+ *
+ * Does NOT save the SRAM.
  */
 void supershuckie_frontend_unload_rom(struct SuperShuckieFrontendRaw *frontend);
 

@@ -139,6 +139,10 @@ void SuperShuckieMainWindow::set_up_file_menu() {
     this->close_rom->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_W));
     connect(this->close_rom, SIGNAL(triggered()), this, SLOT(do_close_rom()));
 
+    this->unload_rom = this->file_menu->addAction("Unload ROM without saving");
+    this->unload_rom->setShortcut(QKeyCombination(Qt::ControlModifier | Qt::ShiftModifier, Qt::Key_W));
+    connect(this->unload_rom, SIGNAL(triggered()), this, SLOT(do_unload_rom()));
+
     this->file_menu->addSeparator();
     this->quit = this->file_menu->addAction("Quit");
     this->quit->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_Q));
@@ -381,6 +385,10 @@ void SuperShuckieMainWindow::load_rom(const std::filesystem::path &path) {
 }
 
 void SuperShuckieMainWindow::do_close_rom() {
+    supershuckie_frontend_close_rom(this->frontend);
+}
+
+void SuperShuckieMainWindow::do_unload_rom() {
     supershuckie_frontend_unload_rom(this->frontend);
 }
 
@@ -389,7 +397,13 @@ void SuperShuckieMainWindow::do_new_game() {
 }
 
 void SuperShuckieMainWindow::do_save_game() {
-    // FIXME
+    char err[256];
+    if(supershuckie_frontend_save_sram(this->frontend, err, sizeof(err))) {
+        this->set_title("Saved SRAM successfully!");
+    }
+    else {
+        DISPLAY_ERROR_DIALOG("Can't save SRAM", "%s", err);
+    }
 }
 
 void SuperShuckieMainWindow::do_save_new_game() {
@@ -429,8 +443,8 @@ void SuperShuckieMainWindow::closeEvent(QCloseEvent *event) {
         auto geometry = this->geometry();
         std::snprintf(xy, sizeof(xy), "%d|%d", geometry.x(), geometry.y());
         supershuckie_frontend_set_custom_setting(this->frontend, WINDOW_XY, xy);
-        
         supershuckie_frontend_write_settings(this->frontend);
+        supershuckie_frontend_save_sram(this->frontend, nullptr, 0);
     }
 
     // if(!this->try_unload_rom()) {

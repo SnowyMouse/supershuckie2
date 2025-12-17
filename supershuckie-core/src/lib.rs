@@ -238,6 +238,11 @@ impl SuperShuckieCore {
         self.core.create_save_state()
     }
 
+    /// Get the SRAM.
+    pub fn save_sram(&self) -> Vec<u8> {
+        self.core.save_sram()
+    }
+
     /// Load a save state.
     pub fn load_save_state(&mut self, state: &[u8]) {
         if self.replay_file_recorder.is_some() {

@@ -136,6 +136,17 @@ impl ThreadedSuperShuckieCore {
     pub fn load_save_state(&self, state: Vec<u8>) {
         let _ = self.sender.send(ThreadCommand::LoadSaveState(state));
     }
+
+    /// Get SRAM.
+    ///
+    /// Returns `None` if SRAM could not be read for some unknown reason.
+    ///
+    /// NOTE: This is blocking.
+    pub fn get_sram(&self) -> Option<Vec<u8>> {
+        let (sender, receiver) = channel();
+        let _ = self.sender.send(ThreadCommand::SaveSRAM(sender));
+        receiver.recv().ok()
+    }
 }
 
 impl Drop for ThreadedSuperShuckieCore {
@@ -161,6 +172,7 @@ enum ThreadCommand {
     HardReset,
     CreateSaveState(Sender<Vec<u8>>),
     LoadSaveState(Vec<u8>),
+    SaveSRAM(Sender<Vec<u8>>),
     Close
 }
 
@@ -327,10 +339,13 @@ impl ThreadedSuperShuckieCoreThread {
                 self.core.hard_reset();
             }
             ThreadCommand::CreateSaveState(sender) => {
-                let _ = sender.send(self.core.core.create_save_state());
+                let _ = sender.send(self.core.create_save_state());
             }
             ThreadCommand::LoadSaveState(state) => {
                 self.core.load_save_state(&state);
+            }
+            ThreadCommand::SaveSRAM(sender) => {
+                let _ = sender.send(self.core.save_sram());
             }
             ThreadCommand::Close => {
                 unreachable!("handle_command(ThreadCommand::Close) should not happen")
