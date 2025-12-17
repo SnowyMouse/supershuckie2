@@ -10,6 +10,7 @@ use supershuckie_core::emulator::{EmulatorCore, GameBoyColor, Input, Model, Null
 use supershuckie_core::{Speed, SuperShuckieRapidFire, ThreadedSuperShuckieCore};
 
 const SETTINGS_FILE: &str = "settings.json";
+const SAVE_STATE_EXTENSION: &str = "save_state";
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum SuperShuckieEmulatorType {
@@ -31,6 +32,8 @@ pub struct SuperShuckieFrontend {
     current_input: Input,
     current_rapid_fire_input: Option<SuperShuckieRapidFire>,
     current_toggled_input: Option<Input>,
+    current_save_state_history: Vec<Vec<u8>>,
+    current_save_state_history_position: usize,
 
     rom_name: Option<UTF8CString>,
     save_file: Option<UTF8CString>,
@@ -58,6 +61,8 @@ impl SuperShuckieFrontend {
             callbacks,
             settings,
             current_input: Input::default(),
+            current_save_state_history: Vec::new(),
+            current_save_state_history_position: 0
         };
 
         s.unload_rom();
@@ -67,6 +72,115 @@ impl SuperShuckieFrontend {
 
     pub fn get_settings(&self) -> &Settings {
         &self.settings
+    }
+
+    /// Create a save state.
+    ///
+    /// If `name` is set, that name will be used.
+    ///
+    /// Returns the name of the save state if created.
+    pub fn create_save_state(&mut self, name: Option<&str>) -> Result<UTF8CString, UTF8CString> {
+        if !self.is_game_running() {
+            return Err("Game not running".into())
+        }
+
+        let current_rom_name = self.get_current_rom_name().expect("no rom name when game is running in create_save_state");
+        let save_states_dir = self.get_save_states_dir_for_rom(current_rom_name);
+
+        let path = match name {
+            Some(name) => save_states_dir.join(format!("{name}.{SAVE_STATE_EXTENSION}")),
+            None => {
+                let current_save_name = self.get_current_save_name().expect("no save name when game is running in create_save_state");
+                let mut i = 0u64;
+                loop {
+                    let path = save_states_dir.join(format!("{current_save_name}-{i}.{SAVE_STATE_EXTENSION}"));
+                    if !path.exists() {
+                        break path
+                    }
+                    i = i.checked_add(1).ok_or_else(|| UTF8CString::from_str("Maximum number of generic save states reached."))?;
+                }
+            }
+        };
+
+        let state = self.create_save_state_now();
+
+        std::fs::write(&path, state)
+            .map_err(|e| format!("Failed to write the save state to disk: {e}").into())
+            .map(|_| path.file_stem().expect("save state name should exist").to_str().expect("save state should be utf-8").into())
+    }
+
+    /// Loads a save state with the given name if it exists.
+    ///
+    /// If it does, and it is successfully loaded, `Ok(true)` is returned.
+    ///
+    /// If it does not exist, `Ok(false)` is returned.
+    pub fn load_save_state_if_exists(&mut self, name: &str) -> Result<bool, UTF8CString> {
+        if !self.is_game_running() {
+            return Err("Game not running".into())
+        }
+
+        let current_rom_name = self.get_current_rom_name().expect("no rom name when game is running in load_save_state");
+        let save_states_dir = self.get_save_states_dir_for_rom(current_rom_name);
+        let save_state_file = save_states_dir.join(format!("{name}.{SAVE_STATE_EXTENSION}"));
+
+        if !save_state_file.is_file() {
+            return Ok(false)
+        }
+
+        self.push_save_state_history();
+
+        let save_state = std::fs::read(save_state_file).map_err(|e| format!("Failed to load save state {name}: {e}"))?;
+        self.core.load_save_state(save_state);
+        Ok(true)
+    }
+
+    fn push_save_state_history(&mut self) {
+        self.current_save_state_history.truncate(self.current_save_state_history_position);
+        self.current_save_state_history.push(self.create_save_state_now());
+
+        while self.current_save_state_history.len() > self.settings.emulation.max_save_state_history.get() {
+            self.current_save_state_history.remove(0);
+        }
+
+        self.current_save_state_history_position = self.current_save_state_history.len();
+
+    }
+
+    fn create_save_state_now(&self) -> Vec<u8> {
+        self.core.create_save_state().expect("Failed to create a save state for an unknown reason (this is a bug!).") // TODO: handle this failing?
+    }
+
+    /// Undo loading a save state, loading the state before loading the save state.
+    pub fn undo_load_save_state(&mut self) -> bool {
+        if self.current_save_state_history_position == 0 {
+            return false // no more to go
+        }
+
+        let backup = self.create_save_state_now();
+        self.current_save_state_history_position -= 1;
+
+        let history = &mut self.current_save_state_history[self.current_save_state_history_position];
+        let state_to_load = std::mem::replace(history, backup);
+
+        self.core.load_save_state(state_to_load);
+        true
+    }
+
+    /// Redo loading a save state, loading the save state before undoing loading the save state.
+    pub fn redo_load_save_state(&mut self) -> bool {
+        if self.current_save_state_history_position == self.current_save_state_history.len() {
+            return false // no more to go
+        }
+
+        let backup = self.create_save_state_now();
+
+        let history = &mut self.current_save_state_history[self.current_save_state_history_position];
+        self.current_save_state_history_position += 1;
+
+        let state_to_load = std::mem::replace(history, backup);
+
+        self.core.load_save_state(state_to_load);
+        true
     }
 
     pub fn set_button_input(&mut self, control: &ControlSetting, pressed: bool) {
@@ -170,6 +284,7 @@ impl SuperShuckieFrontend {
             unknown => return Err(format!("Unknown or unsupported ROM file type .{unknown}").into())
         };
 
+        self.create_userdata_for_rom(filename)?;
         self.unload_rom();
         self.loaded_rom_data = Some(data);
         self.rom_name = Some(UTF8CString::from_str(filename));
@@ -179,6 +294,38 @@ impl SuperShuckieFrontend {
         Ok(())
     }
 
+    fn create_userdata_for_rom(&mut self, filename: &str) -> Result<(), UTF8CString> {
+        fn create_if_not_dir(what: &Path) -> Result<(), UTF8CString> {
+            if !what.is_dir() && let Err(e) = std::fs::create_dir(what) {
+                return Err(format!("Failed to create userdata dir for {}: {e}", what.display()).into());
+            }
+            Ok(())
+        }
+
+        create_if_not_dir(&self.get_userdir_for_rom(filename))?;
+        create_if_not_dir(&self.get_save_states_dir_for_rom(filename))?;
+        create_if_not_dir(&self.get_save_data_dir_for_rom(filename))?;
+        create_if_not_dir(&self.get_replays_dir_for_rom(filename))?;
+
+        Ok(())
+    }
+
+    fn get_save_states_dir_for_rom(&self, filename: &str) -> PathBuf {
+        self.get_userdir_for_rom(filename).join("save states")
+    }
+
+    fn get_save_data_dir_for_rom(&self, filename: &str) -> PathBuf {
+        self.get_userdir_for_rom(filename).join("save data")
+    }
+
+    fn get_replays_dir_for_rom(&self, filename: &str) -> PathBuf {
+        self.get_userdir_for_rom(filename).join("replays")
+    }
+
+    fn get_userdir_for_rom(&self, filename: &str) -> PathBuf {
+        self.user_dir.join(format!("{filename}-data"))
+    }
+
     fn reload_rom_in_place(&mut self) {
         let emulator_type = self.core_metadata.emulator_type.expect("reload_rom_in_place with no emulator type");
         let rom_name = self.get_current_rom_name().expect("reload_rom_in_place with no loaded ROM");
@@ -186,7 +333,13 @@ impl SuperShuckieFrontend {
         let save_file_data = self.get_save_file_data(rom_name, save_file);
         let rom_data = self.loaded_rom_data.as_ref().map(|i| i.as_slice()).expect("reload_rom_in_place with no loaded rom");
         let core = self.make_new_core(rom_data, save_file_data, emulator_type);
+        self.reset_save_state_history();
         self.set_core_in_place(core);
+    }
+
+    fn reset_save_state_history(&mut self) {
+        self.current_save_state_history = Vec::new();
+        self.current_save_state_history_position = 0;
     }
 
     fn make_new_core(&self, rom_data: &[u8], save_file: Option<Vec<u8>>, emulator_type: SuperShuckieEmulatorType) -> Box<dyn EmulatorCore> {

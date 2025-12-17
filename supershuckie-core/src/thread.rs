@@ -1,7 +1,7 @@
 use crate::emulator::{EmulatorCore, Input, ScreenData};
 use crate::{SuperShuckieCore, SuperShuckieRapidFire};
 use std::boxed::Box;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex, TryLockError, Weak};
 use std::time::Duration;
 use std::vec::Vec;
@@ -12,7 +12,7 @@ use supershuckie_pokeabyte_integration::PokeAByteIntegrationServer;
 use supershuckie_replay_recorder::replay_file::record::ReplayFileRecorderFns;
 use crate::Speed;
 
-/// A non-blocking, threaded wrapper for [`SuperShuckieCore`].
+/// A (mostly) non-blocking, threaded wrapper for [`SuperShuckieCore`].
 pub struct ThreadedSuperShuckieCore {
     screens: Arc<Mutex<Vec<ScreenData>>>,
     sender: Sender<ThreadCommand>,
@@ -120,6 +120,22 @@ impl ThreadedSuperShuckieCore {
     pub fn set_toggled_input(&self, input: Option<Input>) {
         let _ = self.sender.send(ThreadCommand::SetToggledInput(input));
     }
+
+    /// Create a save state.
+    ///
+    /// Returns `None` if no save state could be created for some unknown reason.
+    ///
+    /// NOTE: This is blocking.
+    pub fn create_save_state(&self) -> Option<Vec<u8>> {
+        let (sender, receiver) = channel();
+        let _ = self.sender.send(ThreadCommand::CreateSaveState(sender));
+        receiver.recv().ok()
+    }
+
+    /// Load a save state.
+    pub fn load_save_state(&self, state: Vec<u8>) {
+        let _ = self.sender.send(ThreadCommand::LoadSaveState(state));
+    }
 }
 
 impl Drop for ThreadedSuperShuckieCore {
@@ -143,6 +159,8 @@ enum ThreadCommand {
     SetToggledInput(Option<Input>),
     SetSpeed(Speed),
     HardReset,
+    CreateSaveState(Sender<Vec<u8>>),
+    LoadSaveState(Vec<u8>),
     Close
 }
 
@@ -318,6 +336,12 @@ impl ThreadedSuperShuckieCoreThread {
             }
             ThreadCommand::HardReset => {
                 self.core.hard_reset();
+            }
+            ThreadCommand::CreateSaveState(sender) => {
+                let _ = sender.send(self.core.core.create_save_state());
+            }
+            ThreadCommand::LoadSaveState(state) => {
+                self.core.load_save_state(&state);
             }
             ThreadCommand::Close => {
                 unreachable!("handle_command(ThreadCommand::Close) should not happen")

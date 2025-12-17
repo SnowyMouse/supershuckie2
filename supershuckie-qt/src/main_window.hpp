@@ -15,7 +15,7 @@ class QCloseEvent;
 namespace SuperShuckie64 {
 
 class SuperShuckieRenderWidget;
-class SuperShuckieVideoScaleAction;
+class SuperShuckieNumberedAction;
 class SuperShuckieGameSpeedDialog;
 
 enum ReplayStatus {
@@ -27,7 +27,7 @@ enum ReplayStatus {
 class SuperShuckieMainWindow: public QMainWindow {
     Q_OBJECT
     friend SuperShuckieRenderWidget;
-    friend SuperShuckieVideoScaleAction;
+    friend SuperShuckieNumberedAction;
     friend SuperShuckieGameSpeedDialog;
     
 public:
@@ -59,6 +59,8 @@ private:
     QMenu *settings_menu;
 
     QMenu *quick_slots;
+    QAction *undo_load_save_state;
+    QAction *redo_load_save_state;
 
     QAction *open_rom;
     QAction *close_rom;
@@ -83,7 +85,7 @@ private:
 
     static const std::size_t VIDEO_SCALE_COUNT = 12;
 
-    SuperShuckieVideoScaleAction *change_video_scale[VIDEO_SCALE_COUNT];
+    SuperShuckieNumberedAction *change_video_scale[VIDEO_SCALE_COUNT];
 
     bool use_number_keys_for_quick_slots = false;
 
@@ -95,6 +97,14 @@ private:
 
     void refresh_action_states();
     void set_quick_load_shortcuts();
+
+    void quick_save(std::uint8_t index);
+    void quick_load(std::uint8_t index);
+
+    void make_save_state(const char *state);
+    void load_save_state(const char *state);
+
+    void set_video_scale(std::uint8_t scale);
 
     void closeEvent(QCloseEvent *event) override;
 
@@ -124,16 +134,20 @@ private slots:
     void do_resume_replay();
     void do_play_replay();
     void do_open_game_speed_dialog() noexcept;
+    void do_undo_load_save_state();
+    void do_redo_load_save_state();
 };
 
-class SuperShuckieVideoScaleAction: public QAction {
+class SuperShuckieNumberedAction: public QAction {
     Q_OBJECT
     friend SuperShuckieMainWindow;
 public:
-    SuperShuckieVideoScaleAction(SuperShuckieMainWindow *parent, const char *text, std::uint8_t scale);
+    typedef void (SuperShuckieMainWindow::*on_activated)(std::uint8_t);
+    SuperShuckieNumberedAction(SuperShuckieMainWindow *parent, const char *text, std::uint8_t number, on_activated activated);
 private:
-    std::uint8_t scale;
+    std::uint8_t number;
     SuperShuckieMainWindow *parent;
+    on_activated activated_fn;
 private slots:
     void activated();
 };

@@ -175,17 +175,22 @@ void SuperShuckieMainWindow::set_up_save_states_menu() {
     this->save_states_menu = this->menu_bar->addMenu("Save states");
 
     this->quick_slots = this->save_states_menu->addMenu("Quick slot");
-    for(std::size_t i = 0; i < SuperShuckieMainWindow::QUICK_SAVE_STATE_COUNT; i++) {
+    for(std::size_t i = 1; i <= SuperShuckieMainWindow::QUICK_SAVE_STATE_COUNT; i++) {
         char fmt[64];
 
-        std::snprintf(fmt, sizeof(fmt), "Quick slot #%zu", i + 1);
+        std::snprintf(fmt, sizeof(fmt), "Quick slot #%zu", i);
         QMenu *menu = quick_slots->addMenu(fmt);
 
-        std::snprintf(fmt, sizeof(fmt), "Save quick slot #%zu", i + 1);
-        this->quick_load_save_states[i] = menu->addAction(fmt);
+        std::snprintf(fmt, sizeof(fmt), "Load quick slot #%zu", i);
+        auto *quick_load = new SuperShuckieNumberedAction(this, fmt, i, &SuperShuckieMainWindow::quick_load);
 
-        std::snprintf(fmt, sizeof(fmt), "Load quick slot #%zu", i + 1);
-        this->quick_save_save_states[i] = menu->addAction(fmt);
+        std::snprintf(fmt, sizeof(fmt), "Save quick slot #%zu", i);
+        auto *quick_save = new SuperShuckieNumberedAction(this, fmt, i, &SuperShuckieMainWindow::quick_save);
+
+        this->quick_load_save_states[i - 1] = quick_load;
+        menu->addAction(quick_load);
+        this->quick_save_save_states[i - 1] = quick_save;
+        menu->addAction(quick_save);
     }
     
     quick_slots->addSeparator();
@@ -193,6 +198,16 @@ void SuperShuckieMainWindow::set_up_save_states_menu() {
     this->use_number_row_for_quick_slots = quick_slots->addAction("Use number row instead of function keys");
     this->use_number_row_for_quick_slots->setCheckable(true);
     connect(this->use_number_row_for_quick_slots, SIGNAL(triggered()), this, SLOT(do_toggle_number_row_for_save_states()));
+
+    this->save_states_menu->addSeparator();
+    
+    this->undo_load_save_state = this->save_states_menu->addAction("Undo load save state");
+    this->undo_load_save_state->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_U));
+    connect(this->undo_load_save_state, SIGNAL(triggered()), this, SLOT(do_undo_load_save_state()));
+    
+    this->redo_load_save_state = this->save_states_menu->addAction("Redo load save state");
+    this->redo_load_save_state->setShortcut(QKeyCombination(Qt::ControlModifier | Qt::ShiftModifier, Qt::Key_U));
+    connect(this->redo_load_save_state, SIGNAL(triggered()), this, SLOT(do_redo_load_save_state()));
 
     this->set_quick_load_shortcuts();
 }
@@ -214,15 +229,62 @@ void SuperShuckieMainWindow::set_up_replays_menu() {
     this->play_replay->setShortcut(QKeyCombination(Qt::ShiftModifier | Qt::ControlModifier, Qt::Key_P));
 }
 
-SuperShuckieVideoScaleAction::SuperShuckieVideoScaleAction(SuperShuckieMainWindow *parent, const char *text, std::uint8_t scale): QAction(text, parent), scale(scale), parent(parent) {
+SuperShuckieNumberedAction::SuperShuckieNumberedAction(SuperShuckieMainWindow *parent, const char *text, std::uint8_t number, on_activated activated): QAction(text, parent), number(number), parent(parent), activated_fn(activated) {
     connect(this, SIGNAL(triggered()), this, SLOT(activated()));
 }
 
-void SuperShuckieVideoScaleAction::activated() {
+void SuperShuckieNumberedAction::activated() {
     if(this->parent->frontend == nullptr) {
         return;
     }
-    supershuckie_frontend_set_video_scale(this->parent->frontend, this->scale);
+    (this->parent->*this->activated_fn)(this->number);
+}
+
+void SuperShuckieMainWindow::set_video_scale(std::uint8_t scale) {
+    supershuckie_frontend_set_video_scale(this->frontend, scale);
+}
+
+void SuperShuckieMainWindow::make_save_state(const char *state) {
+    char error[256];
+    auto success = supershuckie_frontend_create_save_state(this->frontend, state, error, sizeof(error));
+    if(success) {
+        char title[512];
+        std::snprintf(title, sizeof(title), "Created state \"%s\"", error);
+        this->set_title(title);
+    }
+    else {
+        DISPLAY_ERROR_DIALOG("Failed to create save state", "%s", error);
+    }
+}
+
+void SuperShuckieMainWindow::load_save_state(const char *state) {
+    char error[256];
+    auto success = supershuckie_frontend_load_save_state(this->frontend, state, error, sizeof(error));
+    if(success) {
+        char title[512];
+        std::snprintf(title, sizeof(title), "Loaded state \"%s\"", state);
+        this->set_title(title);
+    }
+    else if(error[0] != 0) {
+        DISPLAY_ERROR_DIALOG("Failed to load save state", "%s", error);
+    }
+    else {
+        char title[512];
+        std::snprintf(title, sizeof(title), "State \"%s\" does not exist", state);
+        this->set_title(title);
+    }
+}
+
+void SuperShuckieMainWindow::quick_save(std::uint8_t index) {
+    char fmt[16];
+    std::snprintf(fmt, sizeof(fmt), "quick-%d", index);
+    this->make_save_state(fmt);
+}
+
+void SuperShuckieMainWindow::quick_load(std::uint8_t index) {
+    char fmt[16];
+    std::snprintf(fmt, sizeof(fmt), "quick-%d", index);
+    this->load_save_state(fmt);
 }
 
 void SuperShuckieMainWindow::set_up_settings_menu() {
@@ -233,7 +295,7 @@ void SuperShuckieMainWindow::set_up_settings_menu() {
         char fmt[256];
         std::snprintf(fmt, sizeof(fmt), "%zux", i);
 
-        auto *action = new SuperShuckieVideoScaleAction(this, fmt, static_cast<uint8_t>(i));
+        auto *action = new SuperShuckieNumberedAction(this, fmt, static_cast<uint8_t>(i), &SuperShuckieMainWindow::set_video_scale);
         video_scaling->addAction(action);
         this->change_video_scale[i - 1] = action;
         action->setCheckable(true);
@@ -257,6 +319,9 @@ void SuperShuckieMainWindow::refresh_action_states() {
     for(auto &state : this->quick_save_save_states) {
         state->setEnabled(game_loaded);
     }
+
+    this->undo_load_save_state->setEnabled(game_loaded);
+    this->redo_load_save_state->setEnabled(game_loaded);
     
     switch(this->replay_status) {
         case ReplayStatus::NoReplay: {
@@ -351,8 +416,8 @@ void SuperShuckieMainWindow::set_quick_load_shortcuts() {
 
     for(std::size_t i = 0; i < SuperShuckieMainWindow::QUICK_SAVE_STATE_COUNT; i++) {
         Qt::Key key = static_cast<Qt::Key>((this->use_number_keys_for_quick_slots ? Qt::Key_1 : Qt::Key_F1) + i);
-        this->quick_load_save_states[i]->setShortcut(QKeyCombination(control | Qt::ShiftModifier, key));
-        this->quick_save_save_states[i]->setShortcut(QKeyCombination(control, key));
+        this->quick_save_save_states[i]->setShortcut(QKeyCombination(control | Qt::ShiftModifier, key));
+        this->quick_load_save_states[i]->setShortcut(QKeyCombination(control, key));
     }
 }
 
@@ -417,7 +482,7 @@ void SuperShuckieMainWindow::on_change_video_mode(void *user_data, std::size_t s
     }
 
     for(auto &scale : self->change_video_scale) {
-        scale->setChecked(scale->scale == video_scale);
+        scale->setChecked(scale->number == video_scale);
     }
 }
 
@@ -431,4 +496,22 @@ void SuperShuckieMainWindow::do_open_game_speed_dialog() noexcept {
     dialog->exec();
 
     delete dialog;
+}
+
+void SuperShuckieMainWindow::do_undo_load_save_state() {
+    if(supershuckie_frontend_undo_load_save_state(this->frontend)) {
+        this->set_title("Undo load save state successful");
+    }
+    else {
+        this->set_title("No more states in the stack!");
+    }
+}
+
+void SuperShuckieMainWindow::do_redo_load_save_state() {
+    if(supershuckie_frontend_redo_load_save_state(this->frontend)) {
+        this->set_title("Redo load save state successful");
+    }
+    else {
+        this->set_title("No more states in the stack!");
+    }
 }

@@ -233,6 +233,21 @@ impl SuperShuckieCore {
         self.rapid_fire_input = Some(input);
     }
 
+    /// Create a save state.
+    pub fn create_save_state(&self) -> Vec<u8> {
+        self.core.create_save_state()
+    }
+
+    /// Load a save state.
+    pub fn load_save_state(&mut self, state: &[u8]) {
+        if self.replay_file_recorder.is_some() {
+            // TODO: not able to load save states while recording (need to add this to the replay file)
+            return
+        }
+
+        let _ = self.core.load_save_state(state);
+    }
+
     /// Set the current toggled input.
     ///
     /// Any activated buttons will be "stuck".

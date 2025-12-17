@@ -164,6 +164,44 @@ const char *supershuckie_frontend_get_custom_setting(const struct SuperShuckieFr
 void supershuckie_frontend_set_custom_setting(const struct SuperShuckieFrontendRaw *frontend, const char *setting, const char *value);
 
 /**
+ * Create a save state of the given name, or null to use a default name.
+ *
+ * If true is returned, the name of the save state (besides the extension) will be written to result (ensure it is long enough).
+ *
+ * If false is returned, an error will be written.
+ *
+ * Safety:
+ * - result must not be null and must be at least result_len bytes long.
+ */
+bool supershuckie_frontend_create_save_state(struct SuperShuckieFrontendRaw *frontend, const char *name, char *result, size_t result_len);
+
+/**
+ * Load a save state of the given name.
+ *
+ * If false is returned, an error will be written UNLESS it was because the save state did not exist, in which case the
+ * error will be empty.
+ *
+ * Safety:
+ * - name must not be null
+ * - error must not be null and must be at least result_len bytes long.
+ */
+bool supershuckie_frontend_load_save_state(struct SuperShuckieFrontendRaw *frontend, const char *name, char *error, size_t error_len);
+
+/**
+ * Undo loading a save state, storing a backup of the current state in the stack.
+ *
+ * Returns true if successful or false if the end of the stack has been reached.
+ */
+bool supershuckie_frontend_undo_load_save_state(struct SuperShuckieFrontendRaw *frontend);
+
+/**
+ * Redo loading a save state, storing a backup of the current state in the stack.
+ *
+ * Returns true if successful or false if the end of the stack has been reached.
+ */
+bool supershuckie_frontend_redo_load_save_state(struct SuperShuckieFrontendRaw *frontend);
+
+/**
  * Load the given ROM, returning true or false depending on whether or not it was successfully loaded.
  *
  * Safety:

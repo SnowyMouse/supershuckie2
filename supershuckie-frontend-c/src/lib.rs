@@ -171,6 +171,60 @@ pub unsafe extern "C" fn supershuckie_frontend_get_custom_setting(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_create_save_state(
+    frontend: &mut SuperShuckieFrontend,
+    name: *const c_char,
+    result: *mut u8,
+    result_len: usize
+) -> bool {
+    let name = if !name.is_null() { Some(unsafe { CStr::from_ptr(name) }.to_str().expect("name not UTF-8")) } else { None };
+    let (success, msg) = match frontend.create_save_state(name) {
+        Ok(n) => (true, n),
+        Err(n) => (false, n)
+    };
+
+    write_str_to_data(msg.as_str(), unsafe { from_raw_parts_mut(result, result_len) });
+    success
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_undo_load_save_state(
+    frontend: &mut SuperShuckieFrontend
+) -> bool {
+    frontend.undo_load_save_state()
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_redo_load_save_state(
+    frontend: &mut SuperShuckieFrontend
+) -> bool {
+    frontend.redo_load_save_state()
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_load_save_state(
+    frontend: &mut SuperShuckieFrontend,
+    name: *const c_char,
+    error: *mut u8,
+    error_len: usize
+) -> bool {
+    let name = unsafe { CStr::from_ptr(name) }.to_str().expect("name not UTF-8");
+    match frontend.load_save_state_if_exists(name) {
+        Ok(true) => true,
+        Ok(false) => {
+            if error_len >= 1 {
+                unsafe { *error = 0 };
+            }
+            false
+        }
+        Err(e) => {
+            write_str_to_data(e.as_str(), unsafe { from_raw_parts_mut(error, error_len) });
+            false
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn supershuckie_frontend_set_custom_setting(
     frontend: &mut SuperShuckieFrontend,
     setting: *const c_char,

@@ -4,7 +4,7 @@ use std::fs;
 use std::fs::File;
 use std::hint::unreachable_unchecked;
 use std::io::{Read, Seek, SeekFrom};
-use std::num::NonZeroU8;
+use std::num::{NonZeroU8, NonZeroUsize};
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 use supershuckie_core::emulator::Input;
@@ -65,7 +65,10 @@ pub struct EmulationSettings {
     pub video_scale: NonZeroU8,
 
     #[serde(default = "EmulationSettings::DEFAULT_PAUSED")]
-    pub paused: bool
+    pub paused: bool,
+
+    #[serde(default = "EmulationSettings::DEFAULT_MAX_SAVE_STATE_HISTORY")]
+    pub max_save_state_history: NonZeroUsize
 }
 
 impl EmulationSettings {
@@ -73,6 +76,7 @@ impl EmulationSettings {
     const DEFAULT_TURBO_SPEED_MULTIPLIER: fn() -> f64 = || 2.0;
     const DEFAULT_VIDEO_SCALE: fn() -> NonZeroU8 = || unsafe { NonZeroU8::new_unchecked(4) };
     const DEFAULT_PAUSED: fn() -> bool = || false;
+    const DEFAULT_MAX_SAVE_STATE_HISTORY: fn() -> NonZeroUsize = || unsafe { NonZeroUsize::new_unchecked(100) };
 }
 
 impl Default for EmulationSettings {
@@ -81,7 +85,8 @@ impl Default for EmulationSettings {
             base_speed_multiplier: EmulationSettings::DEFAULT_BASE_SPEED_MULTIPLIER(),
             turbo_speed_multiplier: EmulationSettings::DEFAULT_TURBO_SPEED_MULTIPLIER(),
             video_scale: EmulationSettings::DEFAULT_VIDEO_SCALE(),
-            paused: EmulationSettings::DEFAULT_PAUSED()
+            paused: EmulationSettings::DEFAULT_PAUSED(),
+            max_save_state_history: EmulationSettings::DEFAULT_MAX_SAVE_STATE_HISTORY()
         }
     }
 }
