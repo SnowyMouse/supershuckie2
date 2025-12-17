@@ -197,6 +197,18 @@ impl EmulatorCore for GameBoyColor {
     }
 
     #[inline]
+    fn swap_screen_data(&mut self, screens: &mut [ScreenData]) {
+        assert_eq!(screens.len(), 1, "Invalid screen count");
+        let first_screen = &mut screens[0];
+
+        // SAFETY: This won't leave this function.
+        let screen_data = unsafe { &mut *self.callback_data.screen.get() };
+
+        assert_eq!(first_screen.pixels.len(), screen_data.pixels.len());
+        core::mem::swap(&mut first_screen.pixels, &mut screen_data.pixels);
+    }
+
+    #[inline]
     fn hard_reset(&mut self) {
         self.core.reset();
     }

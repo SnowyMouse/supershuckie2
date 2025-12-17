@@ -60,6 +60,12 @@ pub trait EmulatorCore: Send + 'static {
     /// Get the screen(s).
     fn get_screens(&self) -> &[ScreenData];
 
+    /// Swap screen data.
+    ///
+    /// Note: Swapping twice does not guarantee getting the original screen data back, as the
+    /// implementation may copy, instead.
+    fn swap_screen_data(&mut self, screens: &mut [ScreenData]);
+
     /// Hard reset the console.
     ///
     /// This simulates instantly turning it off and on.

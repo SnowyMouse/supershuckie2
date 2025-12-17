@@ -77,6 +77,10 @@ impl EmulatorCore for NullEmulatorCore {
         core::slice::from_ref(&*NULL_EMULATOR_SCREEN)
     }
 
+    fn swap_screen_data(&mut self, screens: &mut [ScreenData]) {
+        screens.fill(NULL_EMULATOR_SCREEN.clone())
+    }
+
     fn hard_reset(&mut self) {
         
     }

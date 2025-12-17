@@ -228,10 +228,8 @@ impl ThreadedSuperShuckieCoreThread {
 
         self.screen_ready_for_copy = false;
 
-        let in_screens = &self.screens_queued;
-        for (in_screen, out_screen) in in_screens.iter().zip(out_screens.iter_mut()) {
-            out_screen.pixels.copy_from_slice(in_screen.pixels.as_slice());
-        }
+        let in_screens = &mut self.screens_queued;
+        core::mem::swap(in_screens, &mut *out_screens);
 
         self.frame_count.store(self.core.total_frames as u32, Ordering::Relaxed);
     }
@@ -263,16 +261,7 @@ impl ThreadedSuperShuckieCoreThread {
             Err(e) => panic!("refresh_screen_data Can't get screens mutex: {e}")
         };
 
-        let in_screens = self.core.core.get_screens();
-        debug_assert_eq!(out_screens_result.len(), in_screens.len(), "Screen count has changed!");
-
-        for (in_screen, out_screen) in in_screens.iter().zip(out_screens_result.iter_mut()) {
-            debug_assert_eq!(in_screen.width, out_screen.width, "Screen width has changed!");
-            debug_assert_eq!(in_screen.height, out_screen.height, "Screen height has changed!");
-            debug_assert_eq!(in_screen.pixels.len(), out_screen.pixels.len(), "Screen pixel count has changed!");
-            debug_assert_eq!(in_screen.encoding, out_screen.encoding, "Screen pixel encoding has changed!");
-            out_screen.pixels.copy_from_slice(in_screen.pixels.as_slice());
-        }
+        self.core.core.swap_screen_data(out_screens_result.as_mut_slice());
     }
 
     /// Update RAM read/writes
