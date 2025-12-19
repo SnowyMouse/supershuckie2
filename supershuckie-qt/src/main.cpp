@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-#include <SDL3/sdl.h>
+#include <SDL3/SDL.h>
 #include <QApplication>
 
 #include "main_window.hpp"

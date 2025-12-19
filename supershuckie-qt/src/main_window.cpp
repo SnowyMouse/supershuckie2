@@ -1,6 +1,6 @@
 #include <cstdio>
 #include <QLayout>
-#include <SDL3/sdl.h>
+#include <SDL3/SDL.h>
 #include <QMenuBar>
 #include <QCloseEvent>
 #include <QFileDialog>
