@@ -3,7 +3,6 @@
 #![warn(missing_docs)]
 
 extern crate alloc;
-
 #[cfg(feature = "std")]
 extern crate std;
 
@@ -11,12 +10,12 @@ use crate::emulator::{EmulatorCore, Input, PartialReplayRecordMetadata, RunTime}
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::sync::atomic::{Ordering, AtomicU32};
 use core::num::NonZeroU64;
-use std::prelude::rust_2015::ToOwned;
-use supershuckie_replay_recorder::replay_file::record::{NullReplayFileSink, ReplayFileRecorder, ReplayFileRecorderFns, ReplayFileRecorderSettings, ReplayFileSink, ReplayFileWriteError};
-use supershuckie_replay_recorder::{ByteVec, UnsignedInteger};
+use core::sync::atomic::{AtomicU32, Ordering};
+use alloc::borrow::ToOwned;
+use supershuckie_replay_recorder::replay_file::record::{NonBlockingReplayFileRecorder, ReplayFileRecorder, ReplayFileRecorderFns, ReplayFileSink, ReplayFileWriteError};
 use supershuckie_replay_recorder::replay_file::{ReplayFileMetadata, ReplayHeaderBlake3Hash, ReplayPatchFormat};
+use supershuckie_replay_recorder::{ByteVec, UnsignedInteger};
 
 pub mod emulator;
 
@@ -283,7 +282,7 @@ impl SuperShuckieCore {
         self.ticks_over_256 = 0;
         self.milliseconds.swap(0, Ordering::Relaxed);
 
-        let recorder = ReplayFileRecorder::new_with_metadata(
+        let recorder = NonBlockingReplayFileRecorder::new(ReplayFileRecorder::new_with_metadata(
             ReplayFileMetadata {
                 console_type,
                 rom_name: partial_replay_record_metadata.rom_name,
@@ -304,9 +303,11 @@ impl SuperShuckieCore {
             initial_state,
             partial_replay_record_metadata.final_file,
             partial_replay_record_metadata.temp_file
-        )?;
+        )?);
 
+        self.frames_per_keyframe = partial_replay_record_metadata.frames_per_keyframe;
         self.replay_file_recorder = Some(Box::new(recorder));
+        
         Ok(())
     }
 

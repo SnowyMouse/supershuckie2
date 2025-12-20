@@ -152,8 +152,14 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
     ///
     /// Panics if already closed.
     pub fn close(&mut self) -> Result<(Final, Temp), (Final, Temp, ReplayFileWriteError)> {
-        let (Some(final_sink), Some(temporary_sink)) = (self.final_sink.take(), self.temporary_sink.take()) else {
+        if self.final_sink.is_none() || self.temporary_sink.is_none() {
             panic!("Already closed...")
+        }
+
+        let _ = self.next_blob();
+
+        let (Some(final_sink), Some(temporary_sink)) = (self.final_sink.take(), self.temporary_sink.take()) else {
+            unreachable!();
         };
 
         if let Err(e) = self.next_blob() {

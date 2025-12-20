@@ -1,13 +1,13 @@
 use core::cmp::Ordering;
 
-use alloc::vec::Vec;
+use crate::packet::{BookmarkMetadata, ByteVec, KeyframeMetadata, Packet, Speed, UnsignedInteger};
+use crate::InputBuffer;
 use alloc::borrow::{Cow, ToOwned};
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::num::NonZeroU16;
 use num_enum::TryFromPrimitive;
-use tinyvec::{ArrayVec, TinyVec};
-use crate::InputBuffer;
-use crate::packet::{BookmarkMetadata, ByteVec, KeyframeMetadata, Packet, Speed, UnsignedInteger};
+use tinyvec::TinyVec;
 
 /// Describes how to write data to a stream.
 #[derive(Clone, Debug, PartialEq)]
@@ -39,7 +39,7 @@ pub trait PacketIO<'a>: Sized + 'a {
     /// Get a list of write instructions.
     /// 
     /// You can use this to write the data to both buffers and streams without duplicating logic.
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]>;
+    fn write_packet_instructions(&'a self) -> PacketInstructionsVec<'a>;
 
     /// Attempt to read all bytes.
     /// 
@@ -47,13 +47,16 @@ pub trait PacketIO<'a>: Sized + 'a {
     fn read_all(from: &mut &'a[u8]) -> Result<Self, PacketReadError>;
 }
 
+/// Container for packet instructions.
+pub type PacketInstructionsVec<'a> = TinyVec<[PacketWriteCommand<'a>; 16]>;
+
 // For UnsignedIntegers, we convert to little endian bytes.
 //
 // We then remove any trailing 00's on the right (to do this we can just truncate to (log2(*self) + 7) / 8).
 //
 // We then store the length as u8 followed by the little endian bytes
-impl<'a> PacketIO<'a> for UnsignedInteger {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
+impl PacketIO<'_> for UnsignedInteger {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
         if *self == 0 {
             return core::iter::once(PacketWriteCommand::WriteByte { byte: 0 }).collect();
         }
@@ -64,7 +67,7 @@ impl<'a> PacketIO<'a> for UnsignedInteger {
         // get number of bytes needed to read it...
         bytes.truncate((self.ilog2() as usize + 7) / 8);
 
-        let mut writer = ArrayVec::new();
+        let mut writer = PacketInstructionsVec::new();
         writer.push(PacketWriteCommand::WriteByte { byte: bytes.len() as u8 });
         writer.push(PacketWriteCommand::WriteVec { bytes });
         writer
@@ -98,8 +101,8 @@ impl<'a> PacketIO<'a> for UnsignedInteger {
     }
 }
 
-impl<'a> PacketIO<'a> for usize {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
+impl PacketIO<'_> for usize {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
         let v = UnsignedInteger::try_from(*self).expect("failed to convert usize to UnsignedInteger; target architecture exceeds 64 bits?");
         static_packet_write_array_references(v.write_packet_instructions())
     }
@@ -112,8 +115,8 @@ impl<'a> PacketIO<'a> for usize {
 
 // For TinyVecs, we put the size followed by the actual bytes
 impl PacketIO<'_> for ByteVec {
-    fn write_packet_instructions<'a>(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut instructions = ArrayVec::new();
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
+        let mut instructions: PacketInstructionsVec = PacketInstructionsVec::new();
         instructions.extend(static_packet_write_array_references(self.len().write_packet_instructions()));
         instructions.push(PacketWriteCommand::WriteSlice { bytes: self.as_slice() });
         instructions
@@ -133,8 +136,8 @@ impl PacketIO<'_> for ByteVec {
 }
 
 impl<'a> PacketIO<'a> for &'a str {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut instructions = ArrayVec::new();
+    fn write_packet_instructions(&'a self) -> PacketInstructionsVec<'a> {
+        let mut instructions = PacketInstructionsVec::new();
         instructions.extend(static_packet_write_array_references(self.len().write_packet_instructions()));
         instructions.push(PacketWriteCommand::WriteSlice { bytes: self.as_bytes() });
         instructions
@@ -152,22 +155,22 @@ impl<'a> PacketIO<'a> for &'a str {
     }
 }
 
-impl<'a> PacketIO<'a> for String {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut instructions = ArrayVec::new();
+impl PacketIO<'_> for String {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
+        let mut instructions = PacketInstructionsVec::new();
         instructions.extend(static_packet_write_array_references(self.len().write_packet_instructions()));
         instructions.push(PacketWriteCommand::WriteSlice { bytes: self.as_bytes() });
         instructions
     }
 
-    fn read_all(from: &mut &'a [u8]) -> Result<Self, PacketReadError> {
+    fn read_all(from: &mut &[u8]) -> Result<Self, PacketReadError> {
         <&str>::read_all(from).map(|i| i.to_owned())
     }
 }
 
 impl<'a, T: PacketIO<'a>> PacketIO<'a> for Vec<T> {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut instructions = ArrayVec::new();
+    fn write_packet_instructions(&'a self) -> PacketInstructionsVec<'a> {
+        let mut instructions = PacketInstructionsVec::new();
         instructions.extend(static_packet_write_array_references(self.len().write_packet_instructions()));
         for i in self {
             instructions.extend(i.write_packet_instructions());
@@ -195,8 +198,8 @@ pub enum PacketReadError {
 
 // Make ArrayVec<[PacketWriteCommand<'_>; LEN]> into 'static.
 // Useful for temporarily made values
-fn static_packet_write_array_references<const LEN: usize>(from: ArrayVec<[PacketWriteCommand<'_>; LEN]>) -> ArrayVec<[PacketWriteCommand<'static>; LEN]> {
-    let mut result = ArrayVec::new();
+fn static_packet_write_array_references<'a, 'b, const LEN: usize>(from: TinyVec<[PacketWriteCommand<'a>; LEN]>) -> TinyVec<[PacketWriteCommand<'b>; LEN]> {
+    let mut result = TinyVec::new();
     for i in from {
         match i {
             PacketWriteCommand::WriteByte { byte } => result.push(PacketWriteCommand::WriteByte { byte }),
@@ -288,8 +291,8 @@ impl PartialOrd<PacketDiscriminator> for u8 {
 
 macro_rules! packet_io_for_int {
     ($int_type:tt) => {
-        impl<'a> PacketIO<'a> for $int_type {
-            fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
+        impl PacketIO<'_> for $int_type {
+            fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
                 core::iter::once(PacketWriteCommand::WriteVec { bytes: (*self).to_le_bytes().as_slice().into() }).collect()
             }
             fn read_all(from: &mut &[u8]) -> Result<Self, PacketReadError> {
@@ -310,8 +313,8 @@ packet_io_for_int!(u32);
 packet_io_for_int!(i16);
 packet_io_for_int!(i32);
 
-impl<'a> PacketIO<'a> for u8 {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
+impl PacketIO<'_> for u8 {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
         core::iter::once(PacketWriteCommand::WriteByte { byte: *self }).collect()
     }
     fn read_all(from: &mut &[u8]) -> Result<Self, PacketReadError> {
@@ -350,9 +353,9 @@ impl Packet {
     }
 }
 
-impl<'a> PacketIO<'a> for Packet {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut commands = ArrayVec::new();
+impl PacketIO<'_> for Packet {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
+        let mut commands = PacketInstructionsVec::new();
         commands.push(PacketWriteCommand::WriteByte { byte: self.get_discriminator_byte() });
 
         // we can write the payload here
@@ -472,9 +475,9 @@ impl<'a> PacketIO<'a> for Packet {
         }
     }
 }
-impl<'a> PacketIO<'a> for KeyframeMetadata {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut write_commands = ArrayVec::new();
+impl PacketIO<'_> for KeyframeMetadata {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_>{
+        let mut write_commands = PacketInstructionsVec::new();
         write_commands.extend(self.input.write_packet_instructions());
         write_commands.extend(self.speed.write_packet_instructions());
         write_commands.extend(self.elapsed_frames.write_packet_instructions());
@@ -491,35 +494,35 @@ impl<'a> PacketIO<'a> for KeyframeMetadata {
         })
     }
 }
-impl<'a> PacketIO<'a> for Speed {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
+impl PacketIO<'_> for Speed {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
         self.speed_over_256.write_packet_instructions()
     }
 
-    fn read_all(from: &mut &'a[u8]) -> Result<Self, PacketReadError> {
+    fn read_all(from: &mut &[u8]) -> Result<Self, PacketReadError> {
         Ok(Self { speed_over_256: NonZeroU16::read_all(from)? })
     }
 }
 
-impl<'a> PacketIO<'a> for NonZeroU16 {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
+impl PacketIO<'_> for NonZeroU16 {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
         static_packet_write_array_references(self.get().write_packet_instructions())
     }
 
-    fn read_all(from: &mut &'a [u8]) -> Result<Self, PacketReadError> {
+    fn read_all(from: &mut &[u8]) -> Result<Self, PacketReadError> {
         Self::new(u16::read_all(from)?).ok_or_else(|| PacketReadError::ParseFail { explanation: Cow::Borrowed("read a zero u16 when NonZeroU16 was expected") })
     }
 }
 
-impl<'a> PacketIO<'a> for BookmarkMetadata {
-    fn write_packet_instructions(&'a self) -> ArrayVec<[PacketWriteCommand<'a>; 16]> {
-        let mut instructions = ArrayVec::new();
+impl PacketIO<'_> for BookmarkMetadata {
+    fn write_packet_instructions(&'_ self) -> PacketInstructionsVec<'_> {
+        let mut instructions = PacketInstructionsVec::new();
         instructions.extend(self.name.write_packet_instructions());
         instructions.extend(self.elapsed_frames.write_packet_instructions());
         instructions
     }
 
-    fn read_all(from: &mut &'a[u8]) -> Result<Self, PacketReadError> {
+    fn read_all(from: &mut &[u8]) -> Result<Self, PacketReadError> {
         Ok(Self {
             name: String::read_all(from)?,
             elapsed_frames: UnsignedInteger::read_all(from)?,

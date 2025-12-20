@@ -13,6 +13,7 @@ use supershuckie_core::emulator::{EmulatorCore, GameBoyColor, Input, Model, Null
 use supershuckie_core::{Speed, SuperShuckieRapidFire, ThreadedSuperShuckieCore};
 use supershuckie_replay_recorder::replay_file::{ReplayHeaderBlake3Hash, ReplayPatchFormat};
 use supershuckie_replay_recorder::ByteVec;
+use supershuckie_replay_recorder::replay_file::record::ReplayFileRecorderSettings;
 
 const SETTINGS_FILE: &str = "settings.json";
 const SAVE_STATE_EXTENSION: &str = "save_state";
@@ -612,7 +613,7 @@ impl SuperShuckieFrontend {
         }
 
         let current_rom_name = self.get_current_rom_name_arc().expect("no rom name when game is running in start_replay");
-        let save_states_dir = self.get_save_states_dir_for_rom(current_rom_name.as_str());
+        let save_states_dir = self.get_replays_dir_for_rom(current_rom_name.as_str());
 
         let (final_file, final_replay, _) = self.load_file_or_make_generic(&save_states_dir, name, None, REPLAY_EXTENSION)?;
         let (temp_file, _, temp_replay) = self.load_file_or_make_generic(&save_states_dir, name, Some("temp"), REPLAY_EXTENSION)?;
@@ -622,12 +623,14 @@ impl SuperShuckieFrontend {
             rom_filename: current_rom_name.to_string(),
 
             // TODO: settings
-            settings: Default::default(),
+            settings: ReplayFileRecorderSettings::default(),
 
             // TODO: patches
             patch_format: ReplayPatchFormat::Unpatched,
             patch_target_checksum: ReplayHeaderBlake3Hash::default(),
             patch_data: ByteVec::default(),
+
+            frames_per_keyframe: 60,
 
             final_file,
             temp_file,

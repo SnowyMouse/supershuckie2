@@ -307,6 +307,11 @@ pub struct PartialReplayRecordMetadata<
     /// Data of the patch (can be empty if no patch)
     pub patch_data: ByteVec,
 
+    /// Number of frames between keyframes.
+    ///
+    /// Lower number will improve seeking performance but increase file and memory size.
+    pub frames_per_keyframe: u64,
+
     /// Final file to write to
     pub final_file: FS,
 
