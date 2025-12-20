@@ -1,5 +1,5 @@
-#ifndef SS64_FILE_RW_HPP
-#define SS64_FILE_RW_HPP
+#ifndef __SUPERSHUCKIE_FILE_RW_HPP__
+#define __SUPERSHUCKIE_FILE_RW_HPP__
 
 #include <filesystem>
 #include <vector>

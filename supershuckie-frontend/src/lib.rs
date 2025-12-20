@@ -6,6 +6,7 @@ use crate::util::UTF8CString;
 use std::ffi::CStr;
 use std::num::{NonZeroU64, NonZeroU8};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use supershuckie_core::emulator::{EmulatorCore, GameBoyColor, Input, Model, NullEmulatorCore, ScreenData};
 use supershuckie_core::{Speed, SuperShuckieRapidFire, ThreadedSuperShuckieCore};
 
@@ -36,8 +37,8 @@ pub struct SuperShuckieFrontend {
     current_save_state_history: Vec<Vec<u8>>,
     current_save_state_history_position: usize,
 
-    rom_name: Option<UTF8CString>,
-    save_file: Option<UTF8CString>,
+    rom_name: Option<Arc<UTF8CString>>,
+    save_file: Option<Arc<UTF8CString>>,
 
     settings: Settings
 }
@@ -288,11 +289,16 @@ impl SuperShuckieFrontend {
         self.create_userdata_for_rom(filename)?;
         self.close_rom();
         self.loaded_rom_data = Some(data);
-        self.rom_name = Some(UTF8CString::from_str(filename));
+        self.rom_name = Some(Arc::new(UTF8CString::from_str(filename)));
         self.core_metadata.emulator_type = Some(emulator_to_use);
-        self.save_file = Some(self.get_current_save_file_name_for_rom(filename));
+        self.save_file = Some(Arc::new(self.get_current_save_file_name_for_rom(filename)));
         self.reload_rom_in_place();
         Ok(())
+    }
+
+    /// Hard reset the console.
+    pub fn hard_reset_console(&mut self) {
+        self.core.hard_reset()
     }
 
     fn create_userdata_for_rom(&mut self, rom: &str) -> Result<(), UTF8CString> {
@@ -361,16 +367,21 @@ impl SuperShuckieFrontend {
         core
     }
 
-    #[expect(unused_variables)]
-    fn get_current_save_file_name_for_rom(&self, rom: &str) -> UTF8CString {
-        // TODO (stub); this should persist for the given ROM
-        UTF8CString::from_str("default")
+    fn get_current_save_file_name_for_rom(&mut self, rom: &str) -> UTF8CString {
+        self.settings.get_rom_config_or_default(rom).save_name.clone()
     }
 
     fn get_save_file_data(&self, rom: &str, save_file: &str) -> Option<Vec<u8>> {
-        let save_file = self.get_save_data_dir_for_rom(rom)
-            .join(format!("{save_file}.{SAVE_DATA_EXTENSION}"));
-        std::fs::read(save_file).ok()
+        std::fs::read(self.get_save_path(rom, save_file)).ok()
+    }
+
+    fn delete_save_file_data(&mut self, rom: &str, save_file: &str) {
+        let _ = std::fs::remove_file(self.get_save_path(rom, save_file)).ok();
+    }
+
+    fn get_save_path(&self, rom: &str, save_file: &str) -> PathBuf {
+        self.get_save_data_dir_for_rom(rom)
+            .join(format!("{save_file}.{SAVE_DATA_EXTENSION}"))
     }
 
     fn get_bios_for_core(&self, emulator_kind: SuperShuckieEmulatorType) -> Vec<u8> {
@@ -423,7 +434,7 @@ impl SuperShuckieFrontend {
         let current_save = self.get_current_save_name().expect("save_sram with no current save");
 
         let sram = self.core.get_sram().expect("save_sram failed to get sram (BUG!)");
-        let save_file = self.get_save_data_dir_for_rom(current_rom).join(format!("{current_save}.{SAVE_DATA_EXTENSION}"));
+        let save_file = self.get_save_path(current_rom, current_save);
 
         std::fs::write(&save_file, sram).map_err(|e| format!("Failed to write SRAM to disk: {e}").into())
     }
@@ -485,6 +496,39 @@ impl SuperShuckieFrontend {
         self.core.enqueue_input(input);
     }
 
+    /// Set the current save file, optionally initializing (clearing) the old one.
+    ///
+    /// The game will be reloaded.
+    pub fn load_or_create_save_file(&mut self, save_file: &str, initialize: bool) {
+        if !self.is_game_running() {
+            return;
+        }
+
+        self.set_current_save_file(save_file);
+
+        if initialize {
+            let rom_name = self.get_current_rom_name_arc().expect("save file when not running");
+            self.delete_save_file_data(rom_name.as_str(), save_file);
+        }
+
+        self.reload_rom_in_place();
+    }
+
+    /// Set the current save file.
+    ///
+    /// The game will NOT be reloaded.
+    pub fn set_current_save_file(&mut self, save_file: &str) {
+        if !self.is_game_running() {
+            return;
+        }
+
+        self.save_sram_unchecked();
+
+        let rom_name = self.get_current_rom_name_arc().expect("save file when not running");
+        self.settings.get_rom_config_or_default(rom_name.as_str()).save_name = save_file.into();
+        self.save_file = Some(Arc::new(save_file.into()));
+    }
+
     /// Handle any logic that needs to be done regularly.
     pub fn tick(&mut self) {
         self.refresh_screen(false);
@@ -500,6 +544,10 @@ impl SuperShuckieFrontend {
         self.core.read_screens(|screens| {
             self.callbacks.refresh_screens(screens);
         })
+    }
+
+    fn get_current_rom_name_arc(&self) -> Option<Arc<UTF8CString>> {
+        self.rom_name.clone()
     }
 
     pub fn get_current_rom_name(&self) -> Option<&str> {

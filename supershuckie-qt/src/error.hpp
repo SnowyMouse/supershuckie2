@@ -1,5 +1,5 @@
-#ifndef SS64_ERROR_HPP
-#define SS64_ERROR_HPP
+#ifndef __SUPERSHUCKIE_ERROR_HPP__
+#define __SUPERSHUCKIE_ERROR_HPP__
 
 #include <QMessageBox>
 #include <cstring>

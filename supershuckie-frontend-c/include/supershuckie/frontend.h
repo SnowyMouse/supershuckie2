@@ -249,6 +249,29 @@ void supershuckie_frontend_close_rom(struct SuperShuckieFrontendRaw *frontend);
 void supershuckie_frontend_unload_rom(struct SuperShuckieFrontendRaw *frontend);
 
 /**
+ * Load a save save file, automatically saving the current SRAM before switching.
+ *
+ * If initialize is true, the save file will be deleted if it exists.
+ *
+ * Safety:
+ * - save_name must be null-terminated UTF-8
+ */
+void supershuckie_frontend_load_or_create_save_file(struct SuperShuckieFrontendRaw *frontend, const char *save_name, bool initialize);
+
+/**
+ * Set the current save file without reloading anything.
+ *
+ * Safety:
+ * - save_name must be null-terminated UTF-8
+ */
+void supershuckie_frontend_set_current_save_file(struct SuperShuckieFrontendRaw *frontend, const char *save_name);
+
+/**
+ * Hard reset the console, simulating switching off/on.
+ */
+void supershuckie_frontend_hard_reset_console(struct SuperShuckieFrontendRaw *frontend);
+
+/**
  * Should be called regularly.
  */
 void supershuckie_frontend_tick(struct SuperShuckieFrontendRaw *frontend);

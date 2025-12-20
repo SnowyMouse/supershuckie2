@@ -123,6 +123,32 @@ pub unsafe extern "C" fn supershuckie_frontend_unload_rom(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_load_or_create_save_file(
+    frontend: &mut SuperShuckieFrontend,
+    save_file: *const c_char,
+    initialize: bool
+) {
+    let save_file = unsafe { CStr::from_ptr(save_file) }.to_str().expect("save file not utf-8");
+    frontend.load_or_create_save_file(save_file, initialize);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_set_current_save_file(
+    frontend: &mut SuperShuckieFrontend,
+    save_file: *const c_char
+) {
+    let save_file = unsafe { CStr::from_ptr(save_file) }.to_str().expect("save file not utf-8");
+    frontend.set_current_save_file(save_file);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_hard_reset_console(
+    frontend: &mut SuperShuckieFrontend
+) {
+    frontend.hard_reset_console();
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn supershuckie_frontend_is_game_running(
     frontend: &SuperShuckieFrontend
 ) -> bool {

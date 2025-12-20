@@ -1,5 +1,5 @@
-#ifndef __SUPERSHUCKIE_MAIN_WINDOW_HPP_
-#define __SUPERSHUCKIE_MAIN_WINDOW_HPP_
+#ifndef __SUPERSHUCKIE_MAIN_WINDOW_HPP__
+#define __SUPERSHUCKIE_MAIN_WINDOW_HPP__
 
 #include <QMainWindow>
 #include <QTimer>
@@ -126,7 +126,7 @@ private slots:
     void do_open_rom();
     void do_close_rom();
     void do_unload_rom();
-    void do_new_game();
+    void do_new_game() noexcept;
     void do_save_game();
     void do_save_new_game();
     void do_reset_console();

@@ -7,6 +7,7 @@
 
 #include <supershuckie/frontend.h>
 
+#include "ask_for_text_dialog.hpp"
 #include "error.hpp"
 #include "file_rw.hpp"
 #include "game_speed_dialog.hpp"
@@ -392,8 +393,16 @@ void SuperShuckieMainWindow::do_unload_rom() {
     supershuckie_frontend_unload_rom(this->frontend);
 }
 
-void SuperShuckieMainWindow::do_new_game() {
-    // FIXME
+void SuperShuckieMainWindow::do_new_game() noexcept {
+    auto text = AskForTextDialog::ask(this, "New game", "Enter the name of the new (empty) save file", "WARNING: If the file exists, it will be deleted immediately.");
+    if(text == std::nullopt) {
+        return;
+    }
+    supershuckie_frontend_load_or_create_save_file(this->frontend, text->c_str(), true);
+
+    char fmt[256];
+    std::snprintf(fmt, sizeof(fmt), "Created empty save file \"%s\"", text->c_str());
+    this->set_title(fmt);
 }
 
 void SuperShuckieMainWindow::do_save_game() {
@@ -407,11 +416,19 @@ void SuperShuckieMainWindow::do_save_game() {
 }
 
 void SuperShuckieMainWindow::do_save_new_game() {
-    // FIXME
+    auto text = AskForTextDialog::ask(this, "Save as new game", "Enter the name of the new (copied) save file", "WARNING: If the file exists, it will be overwritten on save.");
+    if(text == std::nullopt) {
+        return;
+    }
+    supershuckie_frontend_set_current_save_file(this->frontend, text->c_str());
+
+    char fmt[256];
+    std::snprintf(fmt, sizeof(fmt), "Switched to save file \"%s\"", text->c_str());
+    this->set_title(fmt);
 }
 
 void SuperShuckieMainWindow::do_reset_console() {
-    // FIXME
+    supershuckie_frontend_hard_reset_console(this->frontend);
 }
 
 void SuperShuckieMainWindow::do_toggle_pause() {

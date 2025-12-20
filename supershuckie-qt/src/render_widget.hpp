@@ -1,5 +1,5 @@
-#ifndef __SUPERSHUCKIE_RENDER_VIEW_HPP_
-#define __SUPERSHUCKIE_RENDER_VIEW_HPP_
+#ifndef __SUPERSHUCKIE_RENDER_VIEW_HPP__
+#define __SUPERSHUCKIE_RENDER_VIEW_HPP__
 
 #include <QWidget>
 #include <QGraphicsView>

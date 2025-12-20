@@ -50,7 +50,33 @@ pub struct Settings {
 
     #[serde(default = "BTreeMap::default")]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub rom_config: BTreeMap<String, ROMConfig>,
+
+    #[serde(default = "BTreeMap::default")]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub custom: BTreeMap<String, UTF8CString>
+}
+
+impl Settings {
+    pub(crate) fn get_rom_config_or_default(&mut self, rom: &str) -> &mut ROMConfig {
+        if !self.rom_config.contains_key(rom) {
+            self.rom_config.insert(rom.to_owned(), ROMConfig::default());
+        }
+        self.rom_config.get_mut(rom).expect("we just added the rom??")
+    }
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct ROMConfig {
+    pub save_name: UTF8CString
+}
+
+impl Default for ROMConfig {
+    fn default() -> Self {
+        Self {
+            save_name: "default".into()
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
