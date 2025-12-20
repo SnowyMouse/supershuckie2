@@ -51,10 +51,14 @@ pub struct ReplayFileRecorder<Final: ReplayFileSink, Temp: ReplayFileSink> {
     current_speed: Speed,
     current_input: InputBuffer,
 
-    final_sink: Option<Final>,
-    temporary_sink: Option<Temp>,
+    sink: Option<SinkTuple<Final, Temp>>,
 
     poisoned: bool
+}
+
+struct SinkTuple<Final: ReplayFileSink, Temp: ReplayFileSink> {
+    final_sink: Final,
+    temp_sink: Temp
 }
 
 /// Settings for [`ReplayFileRecorder`]
@@ -90,7 +94,7 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
         starting_speed: Speed,
         initial_keyframe_state: ByteVec,
         mut final_sink: Final,
-        mut temporary_sink: Temp
+        mut temp_sink: Temp
     ) -> Result<ReplayFileRecorder<Final, Temp>, ReplayFileWriteError> {
         if settings.minimum_uncompressed_bytes_per_blob == 0 {
             settings.minimum_uncompressed_bytes_per_blob = 1024 * 1024 * 512;
@@ -106,10 +110,10 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
         let metadata_bytes = metadata.as_bytes();
         let current_blob_offset = metadata_bytes.len() + patch_data.len();
 
-        temporary_sink.write_bytes(metadata_bytes.as_slice())?;
+        temp_sink.write_bytes(metadata_bytes.as_slice())?;
         final_sink.write_bytes(metadata_bytes.as_slice())?;
 
-        temporary_sink.write_bytes(patch_data.as_slice())?;
+        temp_sink.write_bytes(patch_data.as_slice())?;
         final_sink.write_bytes(patch_data.as_slice())?;
 
         let mut recorder = ReplayFileRecorder {
@@ -126,8 +130,9 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
             frames_since_last_non_frames_packet: 0,
             all_keyframes: Vec::new(),
             poisoned: false,
-            final_sink: Some(final_sink),
-            temporary_sink: Some(temporary_sink),
+            sink: Some(SinkTuple {
+                final_sink, temp_sink
+            })
         };
 
         recorder.insert_keyframe(
@@ -141,7 +146,7 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
     /// Returns `true` if the stream was closed.
     #[inline]
     pub fn is_closed(&self) -> bool {
-        self.final_sink.is_none()
+        self.sink.is_none()
     }
 
     /// Close the replay file recorder.
@@ -152,22 +157,20 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
     ///
     /// Panics if already closed.
     pub fn close(&mut self) -> Result<(Final, Temp), (Final, Temp, ReplayFileWriteError)> {
-        if self.final_sink.is_none() || self.temporary_sink.is_none() {
-            panic!("Already closed...")
-        }
+        assert!(!self.is_closed(), "Already closed...");
 
         let _ = self.next_blob();
 
-        let (Some(final_sink), Some(temporary_sink)) = (self.final_sink.take(), self.temporary_sink.take()) else {
+        let Some(SinkTuple { final_sink, temp_sink }) = self.sink.take() else {
             unreachable!();
         };
 
         if let Err(e) = self.next_blob() {
             self.poisoned = true;
-            return Err((final_sink, temporary_sink, e))
+            return Err((final_sink, temp_sink, e))
         }
         self.poisoned = true;
-        Ok((final_sink, temporary_sink))
+        Ok((final_sink, temp_sink))
     }
 
     /// Returns true if an unrecoverable error occurred.
@@ -308,16 +311,15 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
 
             let instructions = what.write_packet_instructions();
             this.current_blob.write_packet_data(&instructions)?;
-            this.temporary_sink.as_mut().expect("write_packet_data on None sink").write_packet_data(&instructions)?;
+            this.sink.as_mut().expect("write_packet_data on None sink").temp_sink.write_packet_data(&instructions)?;
             Ok(())
         })
     }
 
     fn get_sinks(&mut self) -> (&mut Final, &mut Temp) {
-        let final_sink = self.final_sink.as_mut().expect("can't get final sink (already closed?)");
-        let temporary_sink = self.temporary_sink.as_mut().expect("can't get temp sink (already closed?)");
+        let sink = self.sink.as_mut().expect("can't get sinks (already closed?)");
 
-        (final_sink, temporary_sink)
+        (&mut sink.final_sink, &mut sink.temp_sink)
     }
 
     fn write_run_frame_packet(&mut self) -> Result<(), ReplayFileWriteError> {
