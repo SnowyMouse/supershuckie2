@@ -4,15 +4,20 @@ pub mod settings;
 use crate::settings::*;
 use crate::util::UTF8CString;
 use std::ffi::CStr;
+use std::fs::File;
+use std::io::Write;
 use std::num::{NonZeroU64, NonZeroU8};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use supershuckie_core::emulator::{EmulatorCore, GameBoyColor, Input, Model, NullEmulatorCore, ScreenData};
+use supershuckie_core::emulator::{EmulatorCore, GameBoyColor, Input, Model, NullEmulatorCore, PartialReplayRecordMetadata, ScreenData};
 use supershuckie_core::{Speed, SuperShuckieRapidFire, ThreadedSuperShuckieCore};
+use supershuckie_replay_recorder::replay_file::{ReplayHeaderBlake3Hash, ReplayPatchFormat};
+use supershuckie_replay_recorder::ByteVec;
 
 const SETTINGS_FILE: &str = "settings.json";
 const SAVE_STATE_EXTENSION: &str = "save_state";
 const SAVE_DATA_EXTENSION: &str = "sav";
+const REPLAY_EXTENSION: &str = "replay";
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum SuperShuckieEmulatorType {
@@ -30,6 +35,7 @@ pub struct SuperShuckieFrontend {
     frame_count: u32,
 
     loaded_rom_data: Option<Vec<u8>>,
+    loaded_bios_data: Option<Vec<u8>>,
 
     current_input: Input,
     current_rapid_fire_input: Option<SuperShuckieRapidFire>,
@@ -39,6 +45,7 @@ pub struct SuperShuckieFrontend {
 
     rom_name: Option<Arc<UTF8CString>>,
     save_file: Option<Arc<UTF8CString>>,
+    recording_replay_file: Option<ReplayFileInfo>,
 
     settings: Settings
 }
@@ -57,6 +64,7 @@ impl SuperShuckieFrontend {
             rom_name: None,
             save_file: None,
             loaded_rom_data: None,
+            loaded_bios_data: None,
             frame_count: 0,
             current_rapid_fire_input: None,
             current_toggled_input: None,
@@ -64,7 +72,8 @@ impl SuperShuckieFrontend {
             settings,
             current_input: Input::default(),
             current_save_state_history: Vec::new(),
-            current_save_state_history_position: 0
+            current_save_state_history_position: 0,
+            recording_replay_file: None
         };
 
         s.unload_rom();
@@ -89,26 +98,35 @@ impl SuperShuckieFrontend {
         let current_rom_name = self.get_current_rom_name().expect("no rom name when game is running in create_save_state");
         let save_states_dir = self.get_save_states_dir_for_rom(current_rom_name);
 
-        let path = match name {
-            Some(name) => save_states_dir.join(format!("{name}.{SAVE_STATE_EXTENSION}")),
-            None => {
-                let current_save_name = self.get_current_save_name().expect("no save name when game is running in create_save_state");
-                let mut i = 0u64;
-                loop {
-                    let path = save_states_dir.join(format!("{current_save_name}-{i}.{SAVE_STATE_EXTENSION}"));
-                    if !path.exists() {
-                        break path
-                    }
-                    i = i.checked_add(1).ok_or_else(|| UTF8CString::from_str("Maximum number of generic save states reached."))?;
-                }
-            }
-        };
+        let (mut file, filename, _) = self.load_file_or_make_generic(&save_states_dir, name, None, SAVE_STATE_EXTENSION)?;
 
         let state = self.create_save_state_now();
+        file.write_all(&state)
+            .map_err(|e| format!("Can't write to {filename}: {e}").into())
+            .map(|_| filename.into())
+    }
 
-        std::fs::write(&path, state)
-            .map_err(|e| format!("Failed to write the save state to disk: {e}").into())
-            .map(|_| path.file_stem().expect("save state name should exist").to_str().expect("save state should be utf-8").into())
+    fn load_file_or_make_generic(&mut self, dir: &Path, name: Option<&str>, generic_prefix: Option<&str>, extension: &str) -> Result<(File, String, PathBuf), UTF8CString> {
+        match name {
+            Some(name) => {
+                let filename = format!("{name}.{extension}");
+                let path = dir.join(&filename);
+                Ok((File::create(&path).map_err(|e| format!("Can't open {name} for writing: {e}"))?, filename, path))
+            },
+            None => {
+                let prefix = generic_prefix.unwrap_or(self.get_current_save_name().expect("no save name when game is running in load_file_or_make_generic"));
+                let mut i = 0u64;
+                loop {
+                    let filename = format!("{prefix}-{i}.{extension}");
+                    let path = dir.join(&filename);
+                    let Ok(file) = File::create_new(&path) else {
+                        i = i.checked_add(1).ok_or_else(|| UTF8CString::from_str("Maximum number of generics reached."))?;
+                        continue
+                    };
+                    return Ok((file, filename, path))
+                }
+            }
+        }
     }
 
     /// Loads a save state with the given name if it exists.
@@ -289,6 +307,8 @@ impl SuperShuckieFrontend {
         self.create_userdata_for_rom(filename)?;
         self.close_rom();
         self.loaded_rom_data = Some(data);
+        let bios = self.get_bios_for_core(emulator_to_use);
+        self.loaded_bios_data = Some(bios.clone());
         self.rom_name = Some(Arc::new(UTF8CString::from_str(filename)));
         self.core_metadata.emulator_type = Some(emulator_to_use);
         self.save_file = Some(Arc::new(self.get_current_save_file_name_for_rom(filename)));
@@ -334,14 +354,14 @@ impl SuperShuckieFrontend {
     }
 
     fn reload_rom_in_place(&mut self) {
-        self.reset_save_state_history();
-
+        self.before_unload_or_reload_rom();
         let emulator_type = self.core_metadata.emulator_type.expect("reload_rom_in_place with no emulator type");
         let rom_name = self.get_current_rom_name().expect("reload_rom_in_place with no loaded ROM");
         let save_file = self.get_current_save_name().expect("reload_rom_in_place with no save file");
         let save_file_data = self.get_save_file_data(rom_name, save_file);
-        let rom_data = self.loaded_rom_data.as_ref().map(|i| i.as_slice()).expect("reload_rom_in_place with no loaded rom");
-        let core = self.make_new_core(rom_data, save_file_data, emulator_type);
+        let rom_data = self.loaded_rom_data.as_ref().expect("reload_rom_in_place with no loaded rom");
+        let bios_data = self.loaded_bios_data.as_ref().expect("reload_rom_in_place with no loaded bios");
+        let core = self.make_new_core(rom_data, bios_data, save_file_data, emulator_type);
         self.core = ThreadedSuperShuckieCore::new(core);
         self.after_switch_core();
         self.after_load_rom();
@@ -352,12 +372,10 @@ impl SuperShuckieFrontend {
         self.current_save_state_history_position = 0;
     }
 
-    fn make_new_core(&self, rom_data: &[u8], save_file: Option<Vec<u8>>, emulator_type: SuperShuckieEmulatorType) -> Box<dyn EmulatorCore> {
-        let bios = self.get_bios_for_core(emulator_type);
-
+    fn make_new_core(&self, rom_data: &[u8], bios: &[u8], save_file: Option<Vec<u8>>, emulator_type: SuperShuckieEmulatorType) -> Box<dyn EmulatorCore> {
         let mut core: Box<dyn EmulatorCore> = match emulator_type {
-            SuperShuckieEmulatorType::GameBoy => Box::new(GameBoyColor::new_from_rom(rom_data, bios.as_slice(), Model::DmgB)),
-            SuperShuckieEmulatorType::GameBoyColor => Box::new(GameBoyColor::new_from_rom(rom_data, bios.as_slice(), Model::Cgb0))
+            SuperShuckieEmulatorType::GameBoy => Box::new(GameBoyColor::new_from_rom(rom_data, bios, Model::DmgB)),
+            SuperShuckieEmulatorType::GameBoyColor => Box::new(GameBoyColor::new_from_rom(rom_data, bios, Model::Cgb0))
         };
 
         if let Some(sram) = save_file {
@@ -400,7 +418,7 @@ impl SuperShuckieFrontend {
 
     /// Unload the ROM without saving.
     pub fn unload_rom(&mut self) {
-        self.before_unload_rom();
+        self.before_unload_or_reload_rom();
         self.core = ThreadedSuperShuckieCore::new(Box::new(NullEmulatorCore));
         self.save_file = None;
         self.rom_name = None;
@@ -493,6 +511,7 @@ impl SuperShuckieFrontend {
     /// Enqueue an input.
     #[inline]
     pub fn enqueue_input(&mut self, input: Input) {
+        self.current_input = input;
         self.core.enqueue_input(input);
     }
 
@@ -566,19 +585,66 @@ impl SuperShuckieFrontend {
         self.save_file.as_ref().map(|i| i.as_c_str())
     }
 
+    /// Save the settings to disk.
     pub fn write_settings(&self) {
         // TODO: handle errors here?
         let _ = std::fs::write(self.user_dir.join(SETTINGS_FILE), serde_json::to_string_pretty(&self.settings).expect("failed to serialize"));
     }
 
-    fn before_unload_rom(&mut self) {
+    fn before_unload_or_reload_rom(&mut self) {
         self.reset_save_state_history();
+        self.stop_recording_replay();
+    }
 
+    /// Start recording a replay.
+    ///
+    /// If `name` is set, that name will be used.
+    ///
+    /// Returns the name of the replay if started.
+    pub fn start_recording_replay(&mut self, name: Option<&str>) -> Result<UTF8CString, UTF8CString> {
         if !self.is_game_running() {
-            return
+            return Err("Game not running".into())
         }
 
-        // probably have to stop replay recording, etc.
+        let current_rom_name = self.get_current_rom_name_arc().expect("no rom name when game is running in start_replay");
+        let save_states_dir = self.get_save_states_dir_for_rom(current_rom_name.as_str());
+
+        let (final_file, final_replay, _) = self.load_file_or_make_generic(&save_states_dir, name, None, REPLAY_EXTENSION)?;
+        let (temp_file, _, temp_replay) = self.load_file_or_make_generic(&save_states_dir, name, Some("temp"), REPLAY_EXTENSION)?;
+
+        self.core.start_recording_replay(PartialReplayRecordMetadata {
+            rom_name: current_rom_name.to_string(),
+            rom_filename: current_rom_name.to_string(),
+
+            // TODO: settings
+            settings: Default::default(),
+
+            // TODO: patches
+            patch_format: ReplayPatchFormat::Unpatched,
+            patch_target_checksum: ReplayHeaderBlake3Hash::default(),
+            patch_data: ByteVec::default(),
+
+            final_file,
+            temp_file,
+        });
+
+        self.recording_replay_file = Some(ReplayFileInfo {
+            final_replay_name: final_replay.clone().into(),
+            temp_replay_path: temp_replay
+        });
+
+        Ok(final_replay.into())
+    }
+
+    /// Stop recording replay.
+    pub fn stop_recording_replay(&mut self) {
+        let Some(replay_file) = self.recording_replay_file.take() else {
+            return
+        };
+
+        // FIXME: We should make sure that it actually finalized here before deleting the temp file.
+        self.core.stop_recording_replay();
+        let _ = std::fs::remove_file(&replay_file.temp_replay_path);
     }
 
     fn after_switch_core(&mut self) {
@@ -606,10 +672,25 @@ impl SuperShuckieFrontend {
         let total_speed = base_speed + (max_speed - base_speed) * turbo;
         self.core.set_speed(Speed::from_multiplier_float(total_speed));
     }
+
+    #[inline]
+    /// Get the replay file info, or `None` if not recording.
+    pub fn get_replay_file_info(&self) -> Option<&ReplayFileInfo> {
+        self.recording_replay_file.as_ref()
+    }
 }
 
 pub struct CoreMetadata {
     pub emulator_type: Option<SuperShuckieEmulatorType>
+}
+
+/// Info of the replay file.
+pub struct ReplayFileInfo {
+    /// Name of the replay file being made
+    pub final_replay_name: UTF8CString,
+
+    /// Path to the temp file being recorded
+    pub temp_replay_path: PathBuf
 }
 
 pub trait SuperShuckieFrontendCallbacks {

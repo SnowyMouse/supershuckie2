@@ -10,6 +10,8 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use safeboy::rgb_encoder::encode_a8r8g8b8;
 use safeboy::{DirectAccessRegion, Gameboy, GameboyCallbacks, InputButton, RunnableInstanceFunctions, RunningGameboy, TurboMode, VBlankType};
 pub use safeboy::Model;
+use supershuckie_replay_recorder::blake3_hash;
+use supershuckie_replay_recorder::replay_file::{ReplayConsoleType, ReplayHeaderBlake3Hash};
 
 /// Game Boy and Game Boy Color emulator.
 ///
@@ -17,7 +19,10 @@ pub use safeboy::Model;
 pub struct GameBoyColor {
     core: Gameboy,
     turbo_mode: TurboMode,
-    callback_data: Arc<GameBoyCallbackData>
+    callback_data: Arc<GameBoyCallbackData>,
+
+    rom_checksum: ReplayHeaderBlake3Hash,
+    bios_checksum: ReplayHeaderBlake3Hash,
 }
 
 struct GameBoyCallbackData {
@@ -59,7 +64,9 @@ impl GameBoyColor {
         Self {
             turbo_mode: TurboMode::Disabled,
             callback_data,
-            core
+            core,
+            rom_checksum: blake3_hash(rom),
+            bios_checksum: blake3_hash(bios),
         }
     }
 }
@@ -211,5 +218,27 @@ impl EmulatorCore for GameBoyColor {
     #[inline]
     fn hard_reset(&mut self) {
         self.core.reset();
+    }
+
+    fn replay_console_type(&self) -> Option<ReplayConsoleType> {
+        match self.core.is_cgb() {
+            true => Some(ReplayConsoleType::GameBoyColor),
+            false => Some(ReplayConsoleType::GameBoy)
+        }
+    }
+
+    #[inline]
+    fn rom_checksum(&self) -> &ReplayHeaderBlake3Hash {
+        &self.rom_checksum
+    }
+
+    #[inline]
+    fn bios_checksum(&self) -> &ReplayHeaderBlake3Hash {
+        &self.bios_checksum
+    }
+
+    #[inline]
+    fn core_name(&self) -> &'static str {
+        safeboy::GB_VERSION
     }
 }

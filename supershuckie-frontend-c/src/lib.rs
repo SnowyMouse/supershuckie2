@@ -204,6 +204,37 @@ pub unsafe extern "C" fn supershuckie_frontend_get_custom_setting(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_start_recording_replay(
+    frontend: &mut SuperShuckieFrontend,
+    name: *const c_char,
+    result: *mut u8,
+    result_len: usize
+) -> bool {
+    let name = if !name.is_null() { Some(unsafe { CStr::from_ptr(name) }.to_str().expect("name not UTF-8")) } else { None };
+    let (success, msg) = match frontend.start_recording_replay(name) {
+        Ok(n) => (true, n),
+        Err(n) => (false, n)
+    };
+
+    write_str_to_data(msg.as_str(), unsafe { from_raw_parts_mut(result, result_len) });
+    success
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_stop_recording_replay(
+    frontend: &mut SuperShuckieFrontend
+) {
+    frontend.stop_recording_replay();
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_get_recording_replay_file(
+    frontend: &SuperShuckieFrontend
+) -> *const c_char {
+    frontend.get_replay_file_info().map(|i| i.final_replay_name.as_c_str().as_ptr()).unwrap_or(null())
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn supershuckie_frontend_create_save_state(
     frontend: &mut SuperShuckieFrontend,
     name: *const c_char,

@@ -164,6 +164,28 @@ const char *supershuckie_frontend_get_custom_setting(const struct SuperShuckieFr
 void supershuckie_frontend_set_custom_setting(const struct SuperShuckieFrontendRaw *frontend, const char *setting, const char *value);
 
 /**
+ * Start recording a replay with the given name, or null to use a default name.
+ *
+ * If true is returned, the name of the replay (besides the extension) will be written to result (ensure it is long enough).
+ *
+ * If false is returned, an error will be written.
+ *
+ * Safety:
+ * - result must not be null and must be at least result_len bytes long.
+ */
+bool supershuckie_frontend_start_recording_replay(struct SuperShuckieFrontendRaw *frontend, const char *name, char *result, size_t result_len);
+
+/**
+ * Stop recording a replay.
+ */
+void supershuckie_frontend_stop_recording_replay(struct SuperShuckieFrontendRaw *frontend);
+
+/**
+ * Get the currently recorded replay file, or nullptr if none.
+ */
+const char *supershuckie_frontend_get_recording_replay_file(const struct SuperShuckieFrontendRaw *frontend);
+
+/**
  * Create a save state of the given name, or null to use a default name.
  *
  * If true is returned, the name of the save state (besides the extension) will be written to result (ensure it is long enough).

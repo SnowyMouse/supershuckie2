@@ -1,16 +1,17 @@
-use crate::emulator::{EmulatorCore, Input, ScreenData};
+use crate::emulator::{EmulatorCore, Input, PartialReplayRecordMetadata, ScreenData};
+use crate::Speed;
 use crate::{SuperShuckieCore, SuperShuckieRapidFire};
+use std::borrow::ToOwned;
 use std::boxed::Box;
+use std::fs::File;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex, TryLockError, Weak};
 use std::time::Duration;
 use std::vec::Vec;
-use std::borrow::ToOwned;
-use std::sync::atomic::{AtomicU32, Ordering};
 #[cfg(feature = "pokeabyte")]
 use supershuckie_pokeabyte_integration::PokeAByteIntegrationServer;
 use supershuckie_replay_recorder::replay_file::record::ReplayFileRecorderFns;
-use crate::Speed;
 
 /// A (mostly) non-blocking, threaded wrapper for [`SuperShuckieCore`].
 pub struct ThreadedSuperShuckieCore {
@@ -89,10 +90,20 @@ impl ThreadedSuperShuckieCore {
             .expect("AttachPokeAByteIntegration - the core thread has crashed");
     }
 
-    /// Attach a replay file recorder.
-    pub fn attach_file_recorder(&self, recorder: Option<Box<dyn ReplayFileRecorderFns>>) {
-        let _ = self.sender.send(ThreadCommand::AttachReplayFileRecorder(recorder))
-            .expect("AttachPokeAByteIntegration - the core thread has crashed");
+    /// Stop recording replay.
+    pub fn start_recording_replay(&self, metadata: PartialReplayRecordMetadata<File, File>) {
+        let _ = self.sender.send(ThreadCommand::StartRecordingReplay(metadata))
+            .expect("StopRecordingReplay - the core thread has crashed");
+    }
+
+    /// Stop recording replay.
+    pub fn stop_recording_replay(&self) -> bool {
+        let (sender, receiver) = channel();
+
+        let _ = self.sender.send(ThreadCommand::StopRecordingReplay(sender))
+            .expect("StopRecordingReplay - the core thread has crashed");
+
+        receiver.recv().ok().unwrap_or(false)
     }
 
     /// Enqueue an input.
@@ -164,7 +175,8 @@ enum ThreadCommand {
     Start,
     Pause,
     AttachPokeAByteIntegration(Option<PokeAByteIntegrationServer>),
-    AttachReplayFileRecorder(Option<Box<dyn ReplayFileRecorderFns>>),
+    StartRecordingReplay(PartialReplayRecordMetadata<File, File>),
+    StopRecordingReplay(Sender<bool>),
     EnqueueInput(Input),
     SetRapidFireInput(Option<SuperShuckieRapidFire>),
     SetToggledInput(Option<Input>),
@@ -216,7 +228,7 @@ impl ThreadedSuperShuckieCoreThread {
             }
         }
 
-        self.core.attach_replay_file_recorder(None);
+        self.core.stop_recording_replay();
         self.integration = None;
 
         let _ = self.sender_close.send(());
@@ -320,8 +332,12 @@ impl ThreadedSuperShuckieCoreThread {
             ThreadCommand::AttachPokeAByteIntegration(integration) => {
                 self.integration = integration;
             }
-            ThreadCommand::AttachReplayFileRecorder(recorder) => {
-                self.core.attach_replay_file_recorder(recorder);
+            ThreadCommand::StartRecordingReplay(metadata) => {
+                // FIXME: error if this fails
+                self.core.start_recording_replay(metadata).expect("FAILED TO START RECORDING REPLAY OH NO");
+            }
+            ThreadCommand::StopRecordingReplay(sender) => {
+                let _ = sender.send(self.core.stop_recording_replay() == Some(true));
             }
             ThreadCommand::EnqueueInput(input) => {
                 self.core.enqueue_input(input);

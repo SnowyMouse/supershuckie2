@@ -327,37 +327,31 @@ void SuperShuckieMainWindow::refresh_action_states() {
 
     this->undo_load_save_state->setEnabled(game_loaded);
     this->redo_load_save_state->setEnabled(game_loaded);
-    
-    switch(this->replay_status) {
-        case ReplayStatus::NoReplay: {
-            this->play_replay->setEnabled(true);
-            this->record_replay->setEnabled(true);
-            this->resume_replay->setEnabled(true);
-            
-            this->close_rom->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_W));
 
-            this->record_replay->setText("Record replay");
-            this->play_replay->setText("Play replay");
-            break;
-        }
-        case ReplayStatus::Recording: {
-            this->play_replay->setEnabled(false);
-            this->record_replay->setEnabled(true);
-            this->resume_replay->setEnabled(false);
+    this->record_replay->setText("Record replay");
+    this->play_replay->setText("Play replay");
 
-            this->record_replay->setText("Stop recording replay");
-            this->play_replay->setText("Play replay");
-            break;
-        }
-        case ReplayStatus::PlayingBack: {
-            this->play_replay->setEnabled(true);
-            this->record_replay->setEnabled(false);
-            this->resume_replay->setEnabled(false);
+    if(this->frontend != nullptr && supershuckie_frontend_get_recording_replay_file(this->frontend) != nullptr) {
+        this->play_replay->setEnabled(true);
+        this->record_replay->setEnabled(true);
+        this->resume_replay->setEnabled(true);
+        
+        this->close_rom->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_W));
+    }
+    // TODO
+    // else if(supershuckie_frontend_is_playing_back(this->frontend)) {
+    //     this->play_replay->setEnabled(true);
+    //     this->record_replay->setEnabled(false);
+    //     this->resume_replay->setEnabled(false);
 
-            this->record_replay->setText("Record replay");
-            this->play_replay->setText("Stop replay");
-            break;
-        }
+    //     this->play_replay->setText("Stop replay");
+    // }
+    else {
+        this->play_replay->setEnabled(false);
+        this->record_replay->setEnabled(true);
+        this->resume_replay->setEnabled(false);
+
+        this->record_replay->setText("Stop recording replay");
     }
 }
 
@@ -460,6 +454,7 @@ void SuperShuckieMainWindow::closeEvent(QCloseEvent *event) {
         auto geometry = this->geometry();
         std::snprintf(xy, sizeof(xy), "%d|%d", geometry.x(), geometry.y());
         supershuckie_frontend_set_custom_setting(this->frontend, WINDOW_XY, xy);
+        supershuckie_frontend_stop_recording_replay(this->frontend);
         supershuckie_frontend_write_settings(this->frontend);
         supershuckie_frontend_save_sram(this->frontend, nullptr, 0);
     }
@@ -477,7 +472,26 @@ SuperShuckieMainWindow::~SuperShuckieMainWindow() {
 }
 
 void SuperShuckieMainWindow::do_record_replay() {
-    // FIXME
+    const char *current_replay = supershuckie_frontend_get_recording_replay_file(this->frontend);
+    if(current_replay != nullptr) {
+        char saved[512];
+        std::snprintf(saved, sizeof(saved), "Saved replay \"%s\"", current_replay);
+        supershuckie_frontend_stop_recording_replay(this->frontend);
+        this->set_title(saved);
+    }
+    else {
+        char result[256];
+        if(supershuckie_frontend_start_recording_replay(this->frontend, nullptr, result, sizeof(result))) {
+            char fmt[512];
+            std::snprintf(fmt, sizeof(fmt), "Started recording replay \"%s\"", result);
+            this->set_title(fmt);
+        }
+        else {
+            DISPLAY_ERROR_DIALOG("Failed to start recording replay", "%s", result);
+        }
+    }
+
+    this->refresh_action_states();
 }
 
 void SuperShuckieMainWindow::do_resume_replay() {

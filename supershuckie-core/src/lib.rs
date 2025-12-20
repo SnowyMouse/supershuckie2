@@ -7,14 +7,16 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-use crate::emulator::{EmulatorCore, Input, RunTime};
+use crate::emulator::{EmulatorCore, Input, PartialReplayRecordMetadata, RunTime};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{Ordering, AtomicU32};
 use core::num::NonZeroU64;
-use supershuckie_replay_recorder::replay_file::record::ReplayFileRecorderFns;
+use std::prelude::rust_2015::ToOwned;
+use supershuckie_replay_recorder::replay_file::record::{NullReplayFileSink, ReplayFileRecorder, ReplayFileRecorderFns, ReplayFileRecorderSettings, ReplayFileSink, ReplayFileWriteError};
 use supershuckie_replay_recorder::{ByteVec, UnsignedInteger};
+use supershuckie_replay_recorder::replay_file::{ReplayFileMetadata, ReplayHeaderBlake3Hash, ReplayPatchFormat};
 
 pub mod emulator;
 
@@ -260,14 +262,65 @@ impl SuperShuckieCore {
         self.toggled_input = input;
     }
 
-    /// Attach a replay recorder.
-    pub fn attach_replay_file_recorder(&mut self, recorder: Option<Box<dyn ReplayFileRecorderFns>>) {
+    /// Start recording a replay.
+    pub fn start_recording_replay<
+        FS: ReplayFileSink + Send + Sync + 'static,
+        TS: ReplayFileSink + Send + Sync + 'static
+    >(&mut self, partial_replay_record_metadata: PartialReplayRecordMetadata<FS, TS>) -> Result<(), ReplayFileWriteError> {
+        self.stop_recording_replay();
+        
+        let console_type = self.core.replay_console_type().expect("NO CONSOLE_TYPE WHEN STARTING REPLAY OH NO");
+        let rom_checksum = self.core.rom_checksum().to_owned();
+        let bios_checksum = self.core.bios_checksum().to_owned();
+        let emulator_core_name = self.core.core_name().to_owned();
+        let initial_state = ByteVec::Heap(self.core.create_save_state());
+        let initial_input = self.current_input;
+        let initial_speed = self.game_speed;
+
+        let mut initial_input_data = Vec::new();
+        self.core.encode_input(initial_input, &mut initial_input_data);
+
+        let recorder = ReplayFileRecorder::new_with_metadata(
+            ReplayFileMetadata {
+                console_type,
+                rom_name: partial_replay_record_metadata.rom_name,
+                rom_filename: partial_replay_record_metadata.rom_filename,
+                rom_checksum,
+                bios_checksum,
+                emulator_core_name,
+                patch_format: ReplayPatchFormat::Unpatched,
+                patch_target_checksum: ReplayHeaderBlake3Hash::default(),
+            },
+
+            ByteVec::new(),
+            partial_replay_record_metadata.settings,
+            self.ticks_over_256,
+
+            ByteVec::Heap(initial_input_data),
+            initial_speed,
+            initial_state,
+            partial_replay_record_metadata.final_file,
+            partial_replay_record_metadata.temp_file
+        )?;
+
+        self.replay_file_recorder = Some(Box::new(recorder));
+        Ok(())
+    }
+
+    /// Stop recording the current replay.
+    ///
+    /// Returns None if no replay was being recorded. Otherwise, returns Some(true) if successfully closed, or Some(false) if not.
+    pub fn stop_recording_replay(&mut self) -> Option<bool> {
         if let Some(mut old_recorder) = self.replay_file_recorder.take() {
-            if !old_recorder.is_closed() {
-                let _ = old_recorder.close();
+            return if !old_recorder.is_closed() {
+                Some(old_recorder.close().is_ok())
+            }
+            else {
+                Some(true)
             }
         }
-        self.replay_file_recorder = recorder;
+
+        None
     }
 
     fn with_recorder<T, F: FnOnce(&mut dyn ReplayFileRecorderFns) -> T>(&mut self, what: F) -> Option<T> {

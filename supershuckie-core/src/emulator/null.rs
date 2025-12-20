@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 use spin::Lazy;
 use crate::emulator::{EmulatorCore, Input, RunTime, ScreenData, ScreenDataEncoding};
 use alloc::string::String;
+use supershuckie_replay_recorder::replay_file::{ReplayConsoleType, ReplayHeaderBlake3Hash};
 
 /// An emulator that does nothing.
 ///
@@ -83,5 +84,21 @@ impl EmulatorCore for NullEmulatorCore {
 
     fn hard_reset(&mut self) {
         
+    }
+
+    fn replay_console_type(&self) -> Option<ReplayConsoleType> {
+        None
+    }
+
+    fn rom_checksum(&self) -> &ReplayHeaderBlake3Hash {
+        &const { unsafe { core::mem::zeroed() } }
+    }
+
+    fn bios_checksum(&self) -> &ReplayHeaderBlake3Hash {
+        &const { unsafe { core::mem::zeroed() } }
+    }
+
+    fn core_name(&self) -> &'static str {
+        "Null"
     }
 }

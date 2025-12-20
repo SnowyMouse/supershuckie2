@@ -362,18 +362,18 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "safeboy"
-version = "0.3.0-beta.3"
+version = "0.3.0-beta.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e61bbbfcca1a2abfbe41c7eaae3777e703d0e1b4adbcf98e3fc3c0c85b8f04b2"
+checksum = "32e235c90e5911612539e3793afd97b1c22005ce6ed04bd014ad181151e371ae"
 dependencies = [
  "sameboy-sys",
 ]
 
 [[package]]
 name = "sameboy-sys"
-version = "0.3.0-beta.2"
+version = "0.3.0-beta.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f864278d91de5233ab505b3d4e2046cd825316e3f28df0492d63817dd051a21a"
+checksum = "068bbf523352724f31f292692ed209b38ea874b251ae68f10006b348dddc0d90"
 dependencies = [
  "bindgen",
  "cc",
@@ -461,6 +461,7 @@ dependencies = [
  "serde",
  "serde_json",
  "supershuckie-core",
+ "supershuckie-replay-recorder",
 ]
 
 [[package]]

@@ -8,6 +8,9 @@ pub use game_boy_color::*;
 pub use null::*;
 
 use alloc::vec::Vec;
+use supershuckie_replay_recorder::ByteVec;
+use supershuckie_replay_recorder::replay_file::{ReplayConsoleType, ReplayHeaderBlake3Hash, ReplayPatchFormat};
+use supershuckie_replay_recorder::replay_file::record::{ReplayFileRecorderSettings, ReplayFileSink};
 
 /// Emulator core functionality.
 pub trait EmulatorCore: Send + 'static {
@@ -70,6 +73,18 @@ pub trait EmulatorCore: Send + 'static {
     ///
     /// This simulates instantly turning it off and on.
     fn hard_reset(&mut self);
+
+    /// Get the replay type.
+    fn replay_console_type(&self) -> Option<ReplayConsoleType>;
+
+    /// Get the checksum of the currently running ROM.
+    fn rom_checksum(&self) -> &ReplayHeaderBlake3Hash;
+
+    /// Get the checksum of the currently running BIOS.
+    fn bios_checksum(&self) -> &ReplayHeaderBlake3Hash;
+
+    /// Get the current core name.
+    fn core_name(&self) -> &'static str;
 }
 
 /// Amount of time passed when running the emulator core.
@@ -268,3 +283,33 @@ pub enum ScreenDataEncoding {
 }
 
 fn _ensure_emulator_core_is_dyn_compatible(_core: &dyn EmulatorCore) {}
+
+/// Partial recording metadata for a SuperShuckie core replay.
+pub struct PartialReplayRecordMetadata<
+    FS: ReplayFileSink + Send + Sync + 'static,
+    TS: ReplayFileSink + Send + Sync + 'static
+> {
+    /// Name of the ROM (can also be the filename)
+    pub rom_name: String,
+
+    /// Filename of the ROM
+    pub rom_filename: String,
+
+    /// Encoding settings to use
+    pub settings: ReplayFileRecorderSettings,
+
+    /// Patch format to use
+    pub patch_format: ReplayPatchFormat,
+
+    /// Checksum of the patch (can be zeroed if no patch)
+    pub patch_target_checksum: ReplayHeaderBlake3Hash,
+
+    /// Data of the patch (can be empty if no patch)
+    pub patch_data: ByteVec,
+
+    /// Final file to write to
+    pub final_file: FS,
+
+    /// Temp file tow rite to
+    pub temp_file: TS,
+}

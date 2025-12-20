@@ -6,9 +6,15 @@ use serde::de::{Error, Visitor};
 
 /// A string that is guaranteed to be UTF-8 while also having its buffer being null-terminated.
 #[repr(transparent)]
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Default)]
 pub struct UTF8CString {
     inner: CString
+}
+
+impl core::fmt::Display for UTF8CString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 impl Serialize for UTF8CString {

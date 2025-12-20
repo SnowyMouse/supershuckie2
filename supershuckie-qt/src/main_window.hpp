@@ -47,8 +47,6 @@ private:
 
     void tick();
 
-    ReplayStatus replay_status = ReplayStatus::NoReplay;
-
     void set_up_menu();
     QMenuBar *menu_bar;
 
