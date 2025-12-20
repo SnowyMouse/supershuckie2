@@ -333,6 +333,53 @@ void supershuckie_frontend_tick(struct SuperShuckieFrontendRaw *frontend);
  */
 void supershuckie_frontend_free(struct SuperShuckieFrontendRaw *frontend);
 
+/**
+ * A string array holding zero or more null-terminated UTF8 strings.
+ *
+ * This can never be null EXCEPT in the supershuckie_stringarray_free function (which this array must be freed in if
+ * retrieved from SuperShuckie).
+ */
+struct SuperShuckieStringArrayRaw;
+
+/**
+ * Get the length of a string array.
+ */
+size_t supershuckie_stringarray_len(const struct SuperShuckieStringArrayRaw *array);
+
+/**
+ * Get the element at the given position in the array, or null if out-of-bounds.
+ */
+const char *supershuckie_stringarray_get(const struct SuperShuckieStringArrayRaw *array, size_t position);
+
+/**
+ * Free the string array.
+ *
+ * Safety:
+ * - A pointer may only be freed once (unless the pointer is null)
+ */
+void supershuckie_stringarray_free(struct SuperShuckieStringArrayRaw *array);
+
+/**
+ * Get all replays for the given rom, or the currently loaded ROM if no ROM passed in.
+ *
+ * This array must be freed with supershuckie_stringarray_free
+ */
+struct SuperShuckieStringArrayRaw *supershuckie_frontend_get_all_replays_for_rom(const struct SuperShuckieFrontendRaw *frontend, const char *rom);
+
+/**
+ * Get all save states for the given rom, or the currently loaded ROM if no ROM passed in.
+ *
+ * This array must be freed with supershuckie_stringarray_free
+ */
+struct SuperShuckieStringArrayRaw *supershuckie_frontend_get_all_save_states_for_rom(const struct SuperShuckieFrontendRaw *frontend, const char *rom);
+
+/**
+ * Get all saves for the given rom, or the currently loaded ROM if no ROM passed in.
+ *
+ * This array must be freed with supershuckie_stringarray_free
+ */
+struct SuperShuckieStringArrayRaw *supershuckie_frontend_get_all_saves_for_rom(const struct SuperShuckieFrontendRaw *frontend, const char *rom);
+
 #ifdef __cplusplus
 }
 #endif

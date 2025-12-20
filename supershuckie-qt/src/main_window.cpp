@@ -11,6 +11,7 @@
 #include <supershuckie/frontend.h>
 
 #include "ask_for_text_dialog.hpp"
+#include "select_item_dialog.hpp"
 #include "error.hpp"
 #include "file_rw.hpp"
 #include "game_speed_dialog.hpp"
@@ -252,6 +253,9 @@ void SuperShuckieMainWindow::set_up_gameplay_menu() {
     this->new_game->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_N));
     connect(this->new_game, SIGNAL(triggered()), this, SLOT(do_new_game()));
 
+    this->load_game = this->gameplay_menu->addAction("Load game...");
+    connect(this->load_game, SIGNAL(triggered()), this, SLOT(do_load_game()));
+
     this->save_game = this->gameplay_menu->addAction("Save game");
     this->save_game->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_S));
     connect(this->save_game, SIGNAL(triggered()), this, SLOT(do_save_game()));
@@ -437,11 +441,11 @@ void SuperShuckieMainWindow::refresh_action_states() {
     this->play_replay->setText("Play replay");
 
     if(this->frontend != nullptr && supershuckie_frontend_get_recording_replay_file(this->frontend) != nullptr) {
-        this->play_replay->setEnabled(true);
+        this->play_replay->setEnabled(false);
         this->record_replay->setEnabled(true);
-        this->resume_replay->setEnabled(true);
-        
-        this->close_rom->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_W));
+        this->resume_replay->setEnabled(false);
+
+        this->record_replay->setText("Stop recording replay");
     }
     // TODO
     // else if(supershuckie_frontend_is_playing_back(this->frontend)) {
@@ -452,11 +456,9 @@ void SuperShuckieMainWindow::refresh_action_states() {
     //     this->play_replay->setText("Stop replay");
     // }
     else {
-        this->play_replay->setEnabled(false);
+        this->play_replay->setEnabled(true);
         this->record_replay->setEnabled(true);
-        this->resume_replay->setEnabled(false);
-
-        this->record_replay->setText("Stop recording replay");
+        this->resume_replay->setEnabled(true);
     }
 }
 
@@ -599,12 +601,42 @@ void SuperShuckieMainWindow::do_record_replay() {
     this->refresh_action_states();
 }
 
+std::vector<std::string> wrap_array_std(SuperShuckieStringArrayRaw *array) {
+    auto ptr = std::unique_ptr<SuperShuckieStringArrayRaw, decltype(&supershuckie_stringarray_free)>(array, &supershuckie_stringarray_free);
+    std::vector<std::string> q;
+    std::size_t count = supershuckie_stringarray_len(ptr.get());
+
+    for(std::size_t i = 0; i < count; i++) {
+        q.emplace_back(supershuckie_stringarray_get(ptr.get(), i));
+    }
+
+    return q;
+}
+
+void SuperShuckieMainWindow::do_load_game() {
+    // TODO: consider pre-selecting the save that we're already on?
+    auto saves = wrap_array_std(supershuckie_frontend_get_all_saves_for_rom(this->frontend, nullptr));
+
+    auto text = SelectItemDialog::ask(this, saves, "Select a save", "Select a save file to load.");
+    if(text == std::nullopt) {
+        return;
+    }
+    
+    supershuckie_frontend_load_or_create_save_file(this->frontend, text->c_str(), false);
+
+    char fmt[256];
+    std::snprintf(fmt, sizeof(fmt), "Switched to save file \"%s\"", text->c_str());
+    this->set_title(fmt);
+}
+
 void SuperShuckieMainWindow::do_resume_replay() {
     // FIXME
+    auto replays = wrap_array_std(supershuckie_frontend_get_all_replays_for_rom(this->frontend, nullptr));
 }
 
 void SuperShuckieMainWindow::do_play_replay() {
     // FIXME
+    auto replays = wrap_array_std(supershuckie_frontend_get_all_replays_for_rom(this->frontend, nullptr));
 }
 
 void SuperShuckieMainWindow::on_refresh_screens(void *user_data, std::size_t screen_count, const uint32_t *const *pixels) {

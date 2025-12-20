@@ -48,7 +48,7 @@ pub trait PacketIO<'a>: Sized + 'a {
 }
 
 /// Container for packet instructions.
-pub type PacketInstructionsVec<'a> = TinyVec<[PacketWriteCommand<'a>; 16]>;
+pub type PacketInstructionsVec<'a> = TinyVec<[PacketWriteCommand<'a>; 32]>;
 
 // For UnsignedIntegers, we convert to little endian bytes.
 //

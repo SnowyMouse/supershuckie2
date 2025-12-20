@@ -410,7 +410,7 @@ pub unsafe extern "C" fn supershuckie_frontend_get_speed_settings(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn supershuckie_frontend_set_speed_settings(
+pub extern "C" fn supershuckie_frontend_set_speed_settings(
     frontend: &mut SuperShuckieFrontend,
     base: f64,
     turbo: f64
@@ -424,6 +424,51 @@ pub unsafe extern "C" fn supershuckie_frontend_free(
 ) {
     if !frontend.is_null() {
         let _ = unsafe { Box::from_raw(frontend) };
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_get_all_replays_for_rom(
+    frontend: &SuperShuckieFrontend,
+    rom: *const c_char
+) -> *mut SuperShuckieStringArray {
+    let array = match unsafe { current_rom_or_null(frontend, rom) } {
+        Some(rom) => SuperShuckieStringArray(frontend.get_all_replays_for_rom(rom)),
+        None => SuperShuckieStringArray::default()
+    };
+    Box::into_raw(Box::new(array))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_get_all_saves_for_rom(
+    frontend: &SuperShuckieFrontend,
+    rom: *const c_char
+) -> *mut SuperShuckieStringArray {
+    let array = match unsafe { current_rom_or_null(frontend, rom) } {
+        Some(rom) => SuperShuckieStringArray(frontend.get_all_saves_for_rom(rom)),
+        None => SuperShuckieStringArray::default()
+    };
+    Box::into_raw(Box::new(array))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_get_all_save_states_for_rom(
+    frontend: &SuperShuckieFrontend,
+    rom: *const c_char
+) -> *mut SuperShuckieStringArray {
+    let array = match unsafe { current_rom_or_null(frontend, rom) } {
+        Some(rom) => SuperShuckieStringArray(frontend.get_all_save_states_for_rom(rom)),
+        None => SuperShuckieStringArray::default()
+    };
+    Box::into_raw(Box::new(array))
+}
+
+unsafe fn current_rom_or_null(frontend: &SuperShuckieFrontend, rom: *const c_char) -> Option<&str> {
+    if rom.is_null() {
+        frontend.get_current_rom_name()
+    }
+    else {
+        Some(unsafe { CStr::from_ptr(rom) }.to_str().expect("save file not utf-8"))
     }
 }
 
@@ -466,5 +511,33 @@ impl From<InputC> for Input {
             y: value.y,
             touch: if value.touch_x == u16::MAX || value.touch_y == u16::MAX { None } else { Some((value.touch_x, value.touch_y)) },
         }
+    }
+}
+
+#[repr(transparent)]
+#[derive(Default)]
+pub struct SuperShuckieStringArray(Vec<UTF8CString>);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_stringarray_len(
+    arr: &SuperShuckieStringArray
+) -> usize {
+    arr.0.len()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_stringarray_get(
+    arr: &SuperShuckieStringArray,
+    element: usize
+) -> *const c_char {
+    arr.0.get(element).map(|i| i.as_c_str().as_ptr()).unwrap_or(null())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_stringarray_free(
+    arr: *mut SuperShuckieStringArray
+) {
+    if !arr.is_null() {
+        let _ = unsafe { Box::from_raw(arr) };
     }
 }

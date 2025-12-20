@@ -22,6 +22,7 @@ add_executable(supershuckie ${EXE_TYPE}
     src/file_rw.cpp
     src/game_speed_dialog.cpp
     src/ask_for_text_dialog.cpp
+    src/select_item_dialog.cpp
 )
 
 set_property(TARGET supershuckie PROPERTY CXX_STANDARD 20)

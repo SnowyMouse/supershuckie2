@@ -658,6 +658,24 @@ impl SuperShuckieFrontend {
         let _ = std::fs::remove_file(&replay_file.temp_replay_path);
     }
 
+    /// Get all saves for the given ROM.
+    #[inline]
+    pub fn get_all_saves_for_rom(&self, rom: &str) -> Vec<UTF8CString> {
+        list_files_in_dir_with_extension(&self.get_save_data_dir_for_rom(rom), SAVE_DATA_EXTENSION)
+    }
+
+    /// Get all save states for the given ROM.
+    #[inline]
+    pub fn get_all_save_states_for_rom(&self, rom: &str) -> Vec<UTF8CString> {
+        list_files_in_dir_with_extension(&self.get_save_states_dir_for_rom(rom), SAVE_STATE_EXTENSION)
+    }
+
+    /// Get all replays for the given ROM.
+    #[inline]
+    pub fn get_all_replays_for_rom(&self, rom: &str) -> Vec<UTF8CString> {
+        list_files_in_dir_with_extension(&self.get_replays_dir_for_rom(rom), REPLAY_EXTENSION)
+    }
+
     fn after_switch_core(&mut self) {
         self.update_video_mode();
     }
@@ -713,6 +731,33 @@ impl SuperShuckieFrontend {
             }
         }
     }
+}
+
+fn list_files_in_dir_with_extension(dir: &Path, extension: &str) -> Vec<UTF8CString> {
+    let Ok(n) = std::fs::read_dir(dir) else {
+        return Vec::new()
+    };
+
+    let mut options = Vec::new();
+    for item in n {
+        let Ok(item) = item else { continue };
+        let path = item.path();
+        if path.extension() != Some(extension.as_ref()) {
+            continue
+        }
+        if !path.is_file() {
+            continue
+        }
+        let Some(stem) = path.file_stem() else {
+            continue
+        };
+        let Some(stem_utf8) = stem.to_str() else {
+            continue
+        };
+        options.push(stem_utf8.into());
+    }
+
+    options
 }
 
 pub struct CoreMetadata {
