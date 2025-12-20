@@ -3,14 +3,14 @@ use crate::Speed;
 use crate::{SuperShuckieCore, SuperShuckieRapidFire};
 use std::borrow::ToOwned;
 use std::boxed::Box;
-use std::format;
 use std::fs::File;
+use std::string::String;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex, TryLockError, Weak};
 use std::time::Duration;
 use std::vec::Vec;
-use std::string::String;
+use std::format;
 #[cfg(feature = "pokeabyte")]
 use supershuckie_pokeabyte_integration::PokeAByteIntegrationServer;
 
@@ -44,7 +44,7 @@ impl ThreadedSuperShuckieCore {
                     screen_ready_for_copy: false,
                     is_running: false,
                     core: SuperShuckieCore::new(emulator_core),
-                    integration: None,
+                    pokeabyte_integration: None,
                     receiver,
                     sender_close,
                     frame_count,
@@ -215,7 +215,7 @@ struct ThreadedSuperShuckieCoreThread {
     core: SuperShuckieCore,
     receiver: Receiver<ThreadCommand>,
     is_running: bool,
-    integration: Option<Arc<PokeAByteIntegrationServer>>,
+    pokeabyte_integration: Option<PokeAByteIntegrationServer>,
     sender_close: Sender<()>
 }
 
@@ -247,7 +247,7 @@ impl ThreadedSuperShuckieCoreThread {
         }
 
         self.core.stop_recording_replay();
-        self.integration = None;
+        self.pokeabyte_integration = None;
 
         let _ = self.sender_close.send(());
     }
@@ -308,7 +308,7 @@ impl ThreadedSuperShuckieCoreThread {
 
     /// Update RAM read/writes
     fn handle_pokeabyte_integration(&mut self) {
-        let Some(integration) = self.integration.as_ref() else {
+        let Some(integration) = self.pokeabyte_integration.as_ref() else {
             return
         };
 
@@ -348,11 +348,11 @@ impl ThreadedSuperShuckieCoreThread {
                 self.is_running = false;
             }
             ThreadCommand::SetPokeAByteEnabled(enabled, err) => {
-                if enabled && self.integration.is_none() {
-                    self.integration = None;
+                if !enabled && self.pokeabyte_integration.is_some() {
+                    self.pokeabyte_integration = None;
                     let _ = err.send(Ok(()));
                 }
-                else if !enabled {
+                else if enabled {
                     let integration = match PokeAByteIntegrationServer::begin_listen() {
                         Ok(n) => {
                             let _ = err.send(Ok(()));
@@ -363,7 +363,7 @@ impl ThreadedSuperShuckieCoreThread {
                             return
                         }
                     };
-                    self.integration = Some(integration)
+                    self.pokeabyte_integration = Some(integration)
                 } else {
                     let _ = err.send(Ok(()));
                 }

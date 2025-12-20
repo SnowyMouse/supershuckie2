@@ -660,9 +660,6 @@ impl SuperShuckieFrontend {
 
     fn after_switch_core(&mut self) {
         self.update_video_mode();
-        if self.settings.pokeabyte.enabled && self.is_game_running() {
-            let _ = self.set_pokeabyte_enabled(true);
-        }
     }
 
     fn update_video_mode(&mut self) {
@@ -675,6 +672,9 @@ impl SuperShuckieFrontend {
         self.force_refresh_screens();
         self.current_input = Input::default();
         self.core.set_speed(Speed::from_multiplier_float(self.settings.emulation.base_speed_multiplier));
+        if self.settings.pokeabyte.enabled {
+            let _ = self.set_pokeabyte_enabled(true);
+        }
         if !self.settings.emulation.paused {
             self.core.start();
         }

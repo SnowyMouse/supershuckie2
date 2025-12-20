@@ -6,7 +6,7 @@ use serde::de::{Error, Visitor};
 
 /// A string that is guaranteed to be UTF-8 while also having its buffer being null-terminated.
 #[repr(transparent)]
-#[derive(Clone, PartialEq, Default)]
+#[derive(Clone, PartialEq, Default, Debug)]
 pub struct UTF8CString {
     inner: CString
 }
