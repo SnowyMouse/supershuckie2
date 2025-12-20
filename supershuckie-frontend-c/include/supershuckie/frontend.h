@@ -181,6 +181,11 @@ bool supershuckie_frontend_start_recording_replay(struct SuperShuckieFrontendRaw
 void supershuckie_frontend_stop_recording_replay(struct SuperShuckieFrontendRaw *frontend);
 
 /**
+ * Get the number of milliseconds.
+ */
+uint32_t supershuckie_frontend_get_recording_replay_milliseconds(const struct SuperShuckieFrontendRaw *frontend);
+
+/**
  * Get the currently recorded replay file, or nullptr if none.
  */
 const char *supershuckie_frontend_get_recording_replay_file(const struct SuperShuckieFrontendRaw *frontend);

@@ -3,7 +3,10 @@
 #include <SDL3/SDL.h>
 #include <QMenuBar>
 #include <QCloseEvent>
+#include <QStatusBar>
 #include <QFileDialog>
+#include <QFontDatabase>
+#include <QLabel>
 
 #include <supershuckie/frontend.h>
 
@@ -18,6 +21,47 @@ using namespace SuperShuckie64;
 
 static const char *USE_NUMBER_KEYS_FOR_QUICK_SLOTS = "number_keys_for_quick_slots";
 static const char *WINDOW_XY = "window_xy";
+static const char *DISPLAY_STATUS_BAR = "display_status_bar";
+
+class SuperShuckie64::SuperShuckieTimestamp: public QWidget {
+public:
+    SuperShuckieTimestamp(QWidget *parent): QWidget(parent) {
+        QHBoxLayout *layout = new QHBoxLayout(this);
+        layout->setSpacing(0);
+        layout->setContentsMargins(0,0,0,0);
+
+        this->timestamp = new QLabel("99:99:99", this);
+        this->timestamp->setFixedSize(this->timestamp->sizeHint());
+        this->timestamp->setAlignment(Qt::AlignRight);
+
+        this->ms = new QLabel(".999", this);
+        this->ms->setFixedSize(this->ms->sizeHint());
+        this->ms->setAlignment(Qt::AlignLeft);
+
+        layout->addWidget(this->timestamp);
+        layout->addWidget(this->ms);
+    }
+
+    void set_timestamp(std::uint32_t ms_total) {
+        std::uint32_t ms = ms_total;
+        std::uint32_t sec = ms_total / 1000;
+        std::uint32_t min = sec / 60;
+        std::uint32_t hr = min / 60;
+
+        min %= 60;
+        sec %= 60;
+        ms %= 1000;
+
+        char timer[256];
+        std::snprintf(timer, sizeof(timer), "%02d:%02d:%02d", hr, min, sec);
+        this->timestamp->setText(timer);
+        std::snprintf(timer, sizeof(timer), ".%.03d", ms);
+        this->ms->setText(timer);
+    }
+private:
+    QLabel *timestamp;
+    QLabel *ms;
+};
 
 SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
     // Remove rounded corners (Windows)
@@ -28,6 +72,19 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
 
     this->render_widget = new SuperShuckieRenderWidget(this);
     this->setCentralWidget(this->render_widget);
+
+    this->status_bar = new QStatusBar(this);
+    this->setStatusBar(this->status_bar);
+
+    this->status_bar_time = new SuperShuckieTimestamp(this);
+    this->status_bar->addPermanentWidget(this->status_bar_time);
+    this->status_bar_time->hide();
+
+    this->status_bar_fps = new QLabel("9999 FPS ", this->status_bar);
+    this->status_bar_fps->setFixedSize(this->status_bar_fps->sizeHint());
+    this->status_bar_fps->setAlignment(Qt::AlignRight);
+    this->status_bar_fps->setText("0 FPS ");
+    this->status_bar->addPermanentWidget(this->status_bar_fps);
 
     this->setWindowFlags(Qt::MSWindowsFixedSizeDialogHint);
     this->layout()->setSizeConstraint(QLayout::SetFixedSize);
@@ -43,6 +100,11 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
     callbacks.refresh_screens = SuperShuckieMainWindow::on_refresh_screens;
     callbacks.change_video_mode = SuperShuckieMainWindow::on_change_video_mode;
     this->frontend = supershuckie_frontend_new("./UserData", &callbacks);
+
+    const char *status_bar_visible_setting = supershuckie_frontend_get_custom_setting(this->frontend, DISPLAY_STATUS_BAR);
+    bool status_bar_visible = status_bar_visible_setting != nullptr && *status_bar_visible_setting == '1';
+    this->status_bar->setVisible(status_bar_visible);
+    this->show_status_bar->setChecked(status_bar_visible);
 
     const char *quick_slots = supershuckie_frontend_get_custom_setting(this->frontend, USE_NUMBER_KEYS_FOR_QUICK_SLOTS);
     if(quick_slots != nullptr && quick_slots[0] == '1') {
@@ -66,6 +128,7 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
 
 void SuperShuckieMainWindow::set_title(const char *title) {
     std::strncpy(this->title_text, title, sizeof(this->title_text) - 1);
+    this->status_bar->showMessage(title);
     this->refresh_title();
 }
 
@@ -77,7 +140,10 @@ void SuperShuckieMainWindow::refresh_title() {
         rom_name = "No ROM Loaded";
     };
     
-    if(this->title_text[0] == 0) {
+    if(this->status_bar->isVisible()) {
+        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s", rom_name);
+    }
+    else if(this->title_text[0] == 0) {
         std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s - %.00f FPS", rom_name, this->current_fps);
     }
     else {
@@ -109,7 +175,23 @@ void SuperShuckieMainWindow::tick() {
         this->current_fps = 1000000.0 * static_cast<double>(this->frames_in_last_second) / static_cast<double>(time_since_last_second_us);
         this->frames_in_last_second = 0;
         this->second_start = now;
+
+        char fps_text[16];
+        std::snprintf(fps_text, sizeof(fps_text), "%d FPS ", static_cast<int>(this->current_fps));
+        this->status_bar_fps->setText(fps_text);
+
         this->refresh_title();
+    }
+
+    if(supershuckie_frontend_get_recording_replay_file(this->frontend) != nullptr) {
+        char timer[256];
+
+        std::uint32_t ms_total = supershuckie_frontend_get_recording_replay_milliseconds(this->frontend);
+        this->status_bar_time->set_timestamp(ms_total);
+        this->status_bar_time->show();
+    }
+    else {
+        this->status_bar_time->hide();
     }
 
     supershuckie_frontend_tick(this->frontend);
@@ -308,6 +390,11 @@ void SuperShuckieMainWindow::set_up_settings_menu() {
 
     auto *game_speed = this->settings_menu->addAction("Game speed...");
     connect(game_speed, SIGNAL(triggered()), this, SLOT(do_open_game_speed_dialog()));
+
+    this->settings_menu->addSeparator();
+    this->show_status_bar = this->settings_menu->addAction("Show status bar");
+    this->show_status_bar->setCheckable(true);
+    connect(this->show_status_bar, SIGNAL(triggered()), this, SLOT(do_toggle_status_bar()));
 }
 
 void SuperShuckieMainWindow::refresh_action_states() {
@@ -559,4 +646,11 @@ void SuperShuckieMainWindow::do_redo_load_save_state() {
     else {
         this->set_title("No more states in the stack!");
     }
+}
+
+void SuperShuckieMainWindow::do_toggle_status_bar() {
+    bool displayed = this->show_status_bar->isChecked();
+    supershuckie_frontend_set_custom_setting(this->frontend, DISPLAY_STATUS_BAR, displayed ? "1" : "0");
+    this->status_bar->setVisible(displayed);
+    this->refresh_title();
 }

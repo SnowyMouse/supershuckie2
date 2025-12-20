@@ -268,7 +268,7 @@ impl SuperShuckieCore {
         TS: ReplayFileSink + Send + Sync + 'static
     >(&mut self, partial_replay_record_metadata: PartialReplayRecordMetadata<FS, TS>) -> Result<(), ReplayFileWriteError> {
         self.stop_recording_replay();
-        
+
         let console_type = self.core.replay_console_type().expect("NO CONSOLE_TYPE WHEN STARTING REPLAY OH NO");
         let rom_checksum = self.core.rom_checksum().to_owned();
         let bios_checksum = self.core.bios_checksum().to_owned();
@@ -279,6 +279,9 @@ impl SuperShuckieCore {
 
         let mut initial_input_data = Vec::new();
         self.core.encode_input(initial_input, &mut initial_input_data);
+
+        self.ticks_over_256 = 0;
+        self.milliseconds.swap(0, Ordering::Relaxed);
 
         let recorder = ReplayFileRecorder::new_with_metadata(
             ReplayFileMetadata {
@@ -294,7 +297,7 @@ impl SuperShuckieCore {
 
             ByteVec::new(),
             partial_replay_record_metadata.settings,
-            self.ticks_over_256,
+            0,
 
             ByteVec::Heap(initial_input_data),
             initial_speed,
@@ -305,6 +308,13 @@ impl SuperShuckieCore {
 
         self.replay_file_recorder = Some(Box::new(recorder));
         Ok(())
+    }
+
+    /// Get number of milliseconds
+    ///
+    /// This will reset to 0 whenever a replay is started.
+    pub fn get_recording_milliseconds(&self) -> u32 {
+        self.milliseconds.load(Ordering::Relaxed)
     }
 
     /// Stop recording the current replay.
@@ -370,7 +380,7 @@ impl SuperShuckieCore {
     }
 
     fn do_frame_timekeeping(&mut self, time: &RunTime) {
-        let ticks_passed = time.ticks * (self.game_speed.speed_over_256.get() as u64);
+        let ticks_passed = time.ticks * 256 * 256 / (self.game_speed.speed_over_256.get() as u64);
         self.ticks_over_256 = self.ticks_over_256.saturating_add(ticks_passed);
         self.frames_since_last_keyframe += time.frames;
         self.total_frames = self.total_frames.wrapping_add(time.frames);

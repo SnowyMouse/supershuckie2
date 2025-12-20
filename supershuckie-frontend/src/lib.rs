@@ -585,6 +585,11 @@ impl SuperShuckieFrontend {
         self.save_file.as_ref().map(|i| i.as_c_str())
     }
 
+    /// Get the number of milliseconds the replay is at.
+    pub fn get_recorded_replay_milliseconds(&self) -> u32 {
+        self.core.get_recorded_replay_milliseconds()
+    }
+
     /// Save the settings to disk.
     pub fn write_settings(&self) {
         // TODO: handle errors here?

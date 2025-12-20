@@ -235,6 +235,13 @@ pub unsafe extern "C" fn supershuckie_frontend_get_recording_replay_file(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_get_recording_replay_milliseconds(
+    frontend: &SuperShuckieFrontend
+) -> u32 {
+    frontend.get_recorded_replay_milliseconds()
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn supershuckie_frontend_create_save_state(
     frontend: &mut SuperShuckieFrontend,
     name: *const c_char,

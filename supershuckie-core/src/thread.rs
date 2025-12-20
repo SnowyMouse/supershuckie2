@@ -11,14 +11,14 @@ use std::time::Duration;
 use std::vec::Vec;
 #[cfg(feature = "pokeabyte")]
 use supershuckie_pokeabyte_integration::PokeAByteIntegrationServer;
-use supershuckie_replay_recorder::replay_file::record::ReplayFileRecorderFns;
 
 /// A (mostly) non-blocking, threaded wrapper for [`SuperShuckieCore`].
 pub struct ThreadedSuperShuckieCore {
     screens: Arc<Mutex<Vec<ScreenData>>>,
     sender: Sender<ThreadCommand>,
     frame_count: Arc<AtomicU32>,
-    receiver_close: Receiver<()>
+    receiver_close: Receiver<()>,
+    recording_replay_milliseconds: Arc<AtomicU32>
 }
 
 impl ThreadedSuperShuckieCore {
@@ -26,12 +26,15 @@ impl ThreadedSuperShuckieCore {
     pub fn new(emulator_core: Box<dyn EmulatorCore>) -> Self {
         let frame_count = Arc::new(AtomicU32::new(0));
         let screens = Arc::new(Mutex::new(emulator_core.get_screens().to_vec()));
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let (sender_close, receiver_close) = std::sync::mpsc::channel();
+        let (sender, receiver) = channel();
+        let (sender_close, receiver_close) = channel();
+
+        let recording_replay_milliseconds = Arc::new(AtomicU32::new(0));
 
         {
             let frame_count = frame_count.clone();
             let screens = Arc::downgrade(&screens);
+            let recording_replay_milliseconds = recording_replay_milliseconds.clone();
             let _ = std::thread::Builder::new().name("ThreadedSuperShuckieCore".to_owned()).spawn(move || {
                 ThreadedSuperShuckieCoreThread {
                     screens,
@@ -42,7 +45,8 @@ impl ThreadedSuperShuckieCore {
                     integration: None,
                     receiver,
                     sender_close,
-                    frame_count
+                    frame_count,
+                    recording_replay_milliseconds
                 }.run_thread();
             });
         }
@@ -51,7 +55,8 @@ impl ThreadedSuperShuckieCore {
             sender,
             screens,
             receiver_close,
-            frame_count
+            frame_count,
+            recording_replay_milliseconds
         }
     }
 
@@ -158,6 +163,11 @@ impl ThreadedSuperShuckieCore {
         let _ = self.sender.send(ThreadCommand::SaveSRAM(sender));
         receiver.recv().ok()
     }
+
+    /// Get the number of milliseconds a replay has been recorded.
+    pub fn get_recorded_replay_milliseconds(&self) -> u32 {
+        self.recording_replay_milliseconds.load(Ordering::Relaxed)
+    }
 }
 
 impl Drop for ThreadedSuperShuckieCore {
@@ -194,6 +204,7 @@ struct ThreadedSuperShuckieCoreThread {
     screens_queued: Vec<ScreenData>,
     screen_ready_for_copy: bool,
     frame_count: Arc<AtomicU32>,
+    recording_replay_milliseconds: Arc<AtomicU32>,
 
     core: SuperShuckieCore,
     receiver: Receiver<ThreadCommand>,
@@ -217,6 +228,7 @@ impl ThreadedSuperShuckieCoreThread {
             self.refresh_screen_data(false);
             self.update_queued_screens();
             self.handle_pokeabyte_integration();
+            self.recording_replay_milliseconds.store(self.core.get_recording_milliseconds(), Ordering::Relaxed);
 
             if self.is_running {
                 self.core.run();

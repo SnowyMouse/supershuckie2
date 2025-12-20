@@ -11,12 +11,14 @@
 class QMenu;
 class QAction;
 class QCloseEvent;
+class QLabel;
 
 namespace SuperShuckie64 {
 
 class SuperShuckieRenderWidget;
 class SuperShuckieNumberedAction;
 class SuperShuckieGameSpeedDialog;
+class SuperShuckieTimestamp;
 
 enum ReplayStatus {
     NoReplay,
@@ -60,6 +62,10 @@ private:
     QAction *undo_load_save_state;
     QAction *redo_load_save_state;
 
+    QStatusBar *status_bar;
+    QLabel *status_bar_fps;
+    SuperShuckieTimestamp *status_bar_time;
+
     QAction *open_rom;
     QAction *close_rom;
     QAction *unload_rom;
@@ -76,6 +82,7 @@ private:
     QAction *play_replay;
 
     QAction *use_number_row_for_quick_slots;
+    QAction *show_status_bar;
 
     static const std::size_t QUICK_SAVE_STATE_COUNT = 9;
 
@@ -136,6 +143,7 @@ private slots:
     void do_open_game_speed_dialog() noexcept;
     void do_undo_load_save_state();
     void do_redo_load_save_state();
+    void do_toggle_status_bar();
 };
 
 class SuperShuckieNumberedAction: public QAction {
