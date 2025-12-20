@@ -3,12 +3,14 @@ use crate::Speed;
 use crate::{SuperShuckieCore, SuperShuckieRapidFire};
 use std::borrow::ToOwned;
 use std::boxed::Box;
+use std::format;
 use std::fs::File;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex, TryLockError, Weak};
 use std::time::Duration;
 use std::vec::Vec;
+use std::string::String;
 #[cfg(feature = "pokeabyte")]
 use supershuckie_pokeabyte_integration::PokeAByteIntegrationServer;
 
@@ -89,10 +91,14 @@ impl ThreadedSuperShuckieCore {
             .expect("Pause - the core thread has crashed");
     }
 
-    /// Attach a Poke-A-Byte integration server.
-    pub fn attach_pokeabyte_server(&self, integration: Option<PokeAByteIntegrationServer>) {
-        let _ = self.sender.send(ThreadCommand::AttachPokeAByteIntegration(integration))
-            .expect("AttachPokeAByteIntegration - the core thread has crashed");
+    /// Attach/detach a Poke-A-Byte integration server.
+    pub fn set_pokeabyte_enabled(&self, enabled: bool) -> Result<(), String> {
+        let (sender, receiver) = channel();
+
+        let _ = self.sender.send(ThreadCommand::SetPokeAByteEnabled(enabled, sender))
+            .expect("SetPokeAByteEnabled - the core thread has crashed");
+
+        receiver.recv().ok().unwrap_or(Ok(()))
     }
 
     /// Stop recording replay.
@@ -184,7 +190,7 @@ impl Drop for ThreadedSuperShuckieCore {
 enum ThreadCommand {
     Start,
     Pause,
-    AttachPokeAByteIntegration(Option<PokeAByteIntegrationServer>),
+    SetPokeAByteEnabled(bool, Sender<Result<(), String>>),
     StartRecordingReplay(PartialReplayRecordMetadata<File, File>),
     StopRecordingReplay(Sender<bool>),
     EnqueueInput(Input),
@@ -209,7 +215,7 @@ struct ThreadedSuperShuckieCoreThread {
     core: SuperShuckieCore,
     receiver: Receiver<ThreadCommand>,
     is_running: bool,
-    integration: Option<PokeAByteIntegrationServer>,
+    integration: Option<Arc<PokeAByteIntegrationServer>>,
     sender_close: Sender<()>
 }
 
@@ -341,8 +347,26 @@ impl ThreadedSuperShuckieCoreThread {
             ThreadCommand::Pause => {
                 self.is_running = false;
             }
-            ThreadCommand::AttachPokeAByteIntegration(integration) => {
-                self.integration = integration;
+            ThreadCommand::SetPokeAByteEnabled(enabled, err) => {
+                if enabled && self.integration.is_none() {
+                    self.integration = None;
+                    let _ = err.send(Ok(()));
+                }
+                else if !enabled {
+                    let integration = match PokeAByteIntegrationServer::begin_listen() {
+                        Ok(n) => {
+                            let _ = err.send(Ok(()));
+                            n
+                        },
+                        Err(e) => {
+                            let _ = err.send(Err(format!("{e:?}")));
+                            return
+                        }
+                    };
+                    self.integration = Some(integration)
+                } else {
+                    let _ = err.send(Ok(()));
+                }
             }
             ThreadCommand::StartRecordingReplay(metadata) => {
                 // FIXME: error if this fails

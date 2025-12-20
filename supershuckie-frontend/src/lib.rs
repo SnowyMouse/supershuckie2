@@ -34,6 +34,7 @@ pub struct SuperShuckieFrontend {
 
     user_dir: PathBuf,
     frame_count: u32,
+    pokeabyte_error: Option<UTF8CString>,
 
     loaded_rom_data: Option<Vec<u8>>,
     loaded_bios_data: Option<Vec<u8>>,
@@ -74,7 +75,8 @@ impl SuperShuckieFrontend {
             current_input: Input::default(),
             current_save_state_history: Vec::new(),
             current_save_state_history_position: 0,
-            recording_replay_file: None
+            recording_replay_file: None,
+            pokeabyte_error: None
         };
 
         s.unload_rom();
@@ -600,6 +602,7 @@ impl SuperShuckieFrontend {
     fn before_unload_or_reload_rom(&mut self) {
         self.reset_save_state_history();
         self.stop_recording_replay();
+        self.pokeabyte_error = None;
     }
 
     /// Start recording a replay.
@@ -657,6 +660,9 @@ impl SuperShuckieFrontend {
 
     fn after_switch_core(&mut self) {
         self.update_video_mode();
+        if self.settings.pokeabyte.enabled && self.is_game_running() {
+            let _ = self.set_pokeabyte_enabled(true);
+        }
     }
 
     fn update_video_mode(&mut self) {
@@ -685,6 +691,27 @@ impl SuperShuckieFrontend {
     /// Get the replay file info, or `None` if not recording.
     pub fn get_replay_file_info(&self) -> Option<&ReplayFileInfo> {
         self.recording_replay_file.as_ref()
+    }
+
+    /// Returns true if PokeAByte is enabled, false if not, or an error if there was an error starting it.
+    pub fn is_pokeabyte_enabled(&self) -> Result<bool, &UTF8CString> {
+        match self.pokeabyte_error.as_ref() {
+            Some(e) => Err(e),
+            None => Ok(self.settings.pokeabyte.enabled)
+        }
+    }
+
+    /// Set whether or not the Poke-A-Byte integration server is enabled.
+    pub fn set_pokeabyte_enabled(&mut self, enabled: bool) -> Result<(), &UTF8CString> {
+        self.settings.pokeabyte.enabled = enabled;
+        self.pokeabyte_error = None;
+        match self.core.set_pokeabyte_enabled(enabled) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                self.pokeabyte_error = Some(e.into());
+                Err(self.pokeabyte_error.as_ref().expect("pokeabyte_error was just set earlier..."))
+            }
+        }
     }
 }
 

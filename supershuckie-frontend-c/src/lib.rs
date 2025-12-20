@@ -297,6 +297,40 @@ pub unsafe extern "C" fn supershuckie_frontend_load_save_state(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_is_pokeabyte_enabled(
+    frontend: &mut SuperShuckieFrontend,
+    error: *mut u8,
+    error_len: usize
+) -> bool {
+    match frontend.is_pokeabyte_enabled() {
+        Ok(n) => {
+            unsafe { *error = 0 };
+            n
+        },
+        Err(e) => {
+            write_str_to_data(e.as_str(), unsafe { from_raw_parts_mut(error, error_len) });
+            false
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_set_pokeabyte_enabled(
+    frontend: &mut SuperShuckieFrontend,
+    enabled: bool,
+    error: *mut u8,
+    error_len: usize
+) -> bool {
+    match frontend.set_pokeabyte_enabled(enabled) {
+        Ok(_) => true,
+        Err(e) => {
+            write_str_to_data(e.as_str(), unsafe { from_raw_parts_mut(error, error_len) });
+            false
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn supershuckie_frontend_save_sram(
     frontend: &mut SuperShuckieFrontend,
     error: *mut u8,

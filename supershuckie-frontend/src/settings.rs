@@ -52,6 +52,9 @@ pub struct Settings {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub rom_config: BTreeMap<String, ROMConfig>,
 
+    #[serde(default = "PokeAByteSettings::default")]
+    pub pokeabyte: PokeAByteSettings,
+
     #[serde(default = "BTreeMap::default")]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub custom: BTreeMap<String, UTF8CString>
@@ -77,6 +80,12 @@ impl Default for ROMConfig {
             save_name: "default".into()
         }
     }
+}
+
+#[derive(Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct PokeAByteSettings {
+    #[serde(default = "bool::default")]
+    pub enabled: bool
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

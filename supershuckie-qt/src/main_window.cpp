@@ -106,6 +106,14 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
     this->status_bar->setVisible(status_bar_visible);
     this->show_status_bar->setChecked(status_bar_visible);
 
+    char buf[256];
+    if(supershuckie_frontend_is_pokeabyte_enabled(this->frontend, buf, sizeof(buf))) {
+        this->enable_pokeabyte_integration->setChecked(true);
+    }
+    else if(buf[0] != 0) {
+        DISPLAY_ERROR_DIALOG("Failed to automatically start Poke-A-Byte integration", "An error occurred on startup when trying to enable Poke-A-Byte integration:\n\n%s", buf);
+    }
+
     const char *quick_slots = supershuckie_frontend_get_custom_setting(this->frontend, USE_NUMBER_KEYS_FOR_QUICK_SLOTS);
     if(quick_slots != nullptr && quick_slots[0] == '1') {
         this->use_number_keys_for_quick_slots = true;
@@ -192,6 +200,11 @@ void SuperShuckieMainWindow::tick() {
     }
     else {
         this->status_bar_time->hide();
+    }
+
+    char buf[256];
+    if(!supershuckie_frontend_is_pokeabyte_enabled(this->frontend, buf, sizeof(buf)) && buf[0] != 0) {
+        this->set_title("Poke-A-Byte integration server error!");
     }
 
     supershuckie_frontend_tick(this->frontend);
@@ -392,6 +405,11 @@ void SuperShuckieMainWindow::set_up_settings_menu() {
     connect(game_speed, SIGNAL(triggered()), this, SLOT(do_open_game_speed_dialog()));
 
     this->settings_menu->addSeparator();
+
+    this->enable_pokeabyte_integration = this->settings_menu->addAction("Enable Poke-A-Byte integration");
+    this->enable_pokeabyte_integration->setCheckable(true);
+    connect(this->enable_pokeabyte_integration, SIGNAL(triggered()), this, SLOT(do_toggle_pokeabyte()));
+
     this->show_status_bar = this->settings_menu->addAction("Show status bar");
     this->show_status_bar->setCheckable(true);
     connect(this->show_status_bar, SIGNAL(triggered()), this, SLOT(do_toggle_status_bar()));
@@ -653,4 +671,14 @@ void SuperShuckieMainWindow::do_toggle_status_bar() {
     supershuckie_frontend_set_custom_setting(this->frontend, DISPLAY_STATUS_BAR, displayed ? "1" : "0");
     this->status_bar->setVisible(displayed);
     this->refresh_title();
+}
+
+void SuperShuckieMainWindow::do_toggle_pokeabyte() {
+    char err[256];
+
+    bool enabled = this->enable_pokeabyte_integration->isChecked();
+    if(!supershuckie_frontend_set_pokeabyte_enabled(this->frontend, enabled, err, sizeof(err))) {
+        DISPLAY_ERROR_DIALOG("Failed to enable Poke-A-Byte integration", "An error occurred when enabling Poke-A-Byte integration:\n\n%s", err);
+        this->enable_pokeabyte_integration->setChecked(false);
+    }
 }

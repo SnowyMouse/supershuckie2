@@ -186,6 +186,27 @@ void supershuckie_frontend_stop_recording_replay(struct SuperShuckieFrontendRaw 
 uint32_t supershuckie_frontend_get_recording_replay_milliseconds(const struct SuperShuckieFrontendRaw *frontend);
 
 /**
+ * Get whether or not Poke-A-Byte is enabled.
+ *
+ * If false, error may be filled with error data if there is any error data (or it will be empty if it is simply not
+ * enabled).
+ *
+ * Safety:
+ * - error must not be null and must be at least error_len bytes long.
+ */
+bool supershuckie_frontend_is_pokeabyte_enabled(const struct SuperShuckieFrontendRaw *frontend, char *error, size_t error_len);
+
+/**
+ * Set whether or not Poke-A-Byte is enabled.
+ *
+ * Returns false if an error occurs, filling the error buffer with the error.
+ *
+ * Safety:
+ * - error must not be null and must be at least error_len bytes long.
+ */
+bool supershuckie_frontend_set_pokeabyte_enabled(const struct SuperShuckieFrontendRaw *frontend, bool enabled, char *error, size_t error_len);
+
+/**
  * Get the currently recorded replay file, or nullptr if none.
  */
 const char *supershuckie_frontend_get_recording_replay_file(const struct SuperShuckieFrontendRaw *frontend);

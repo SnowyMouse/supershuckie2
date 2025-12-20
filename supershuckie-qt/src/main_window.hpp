@@ -83,6 +83,7 @@ private:
 
     QAction *use_number_row_for_quick_slots;
     QAction *show_status_bar;
+    QAction *enable_pokeabyte_integration;
 
     static const std::size_t QUICK_SAVE_STATE_COUNT = 9;
 
@@ -144,6 +145,7 @@ private slots:
     void do_undo_load_save_state();
     void do_redo_load_save_state();
     void do_toggle_status_bar();
+    void do_toggle_pokeabyte();
 };
 
 class SuperShuckieNumberedAction: public QAction {
