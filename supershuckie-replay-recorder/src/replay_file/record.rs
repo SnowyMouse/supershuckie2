@@ -279,9 +279,10 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
     /// Set the current input.
     pub fn set_input(&mut self, input_buffer: InputBuffer) -> Result<(), ReplayFileWriteError> {
         if self.current_input == input_buffer {
-            return Ok(())
+            // return Ok(())
         }
 
+        self.current_input = input_buffer.clone();
         self.write_packet_data(&Packet::ChangeInput { data: input_buffer })
     }
 

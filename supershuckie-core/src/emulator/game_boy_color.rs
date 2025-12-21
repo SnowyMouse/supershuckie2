@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 use safeboy::rgb_encoder::encode_a8r8g8b8;
-use safeboy::{DirectAccessRegion, Gameboy, GameboyCallbacks, InputButton, RunnableInstanceFunctions, RunningGameboy, TurboMode, VBlankType};
+use safeboy::{DirectAccessRegion, Gameboy, GameboyCallbacks, InputButton, RtcMode, RunnableInstanceFunctions, RunningGameboy, TurboMode, VBlankType};
 pub use safeboy::Model;
 use supershuckie_replay_recorder::blake3_hash;
 use supershuckie_replay_recorder::replay_file::{ReplayConsoleType, ReplayHeaderBlake3Hash};
@@ -45,6 +45,7 @@ impl GameBoyColor {
         core.load_rom(rom);
         core.set_rgb_encoder(encode_a8r8g8b8);
         core.set_rendering_enabled(true);
+        core.set_rtc_mode(RtcMode::Accurate);
 
         let dimensions = core.get_pixel_buffer();
         let screen_data = ScreenData {

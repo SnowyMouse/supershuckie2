@@ -11,16 +11,13 @@ use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::{Display, Formatter};
 use core::num::NonZeroU64;
-use core::sync::atomic::{AtomicU32, Ordering};
-use std::{eprintln, println};
 use supershuckie_replay_recorder::replay_file::playback::{ReplayFilePlayer, ReplaySeekError};
 use supershuckie_replay_recorder::replay_file::record::{NonBlockingReplayFileRecorder, ReplayFileRecorder, ReplayFileRecorderFns, ReplayFileSink, ReplayFileWriteError};
 use supershuckie_replay_recorder::replay_file::{blake3_hash_to_ascii, ReplayFileMetadata, ReplayHeaderBlake3Hash, ReplayPatchFormat};
-use supershuckie_replay_recorder::{ByteVec, Packet, PacketIO, UnsignedInteger};
+use supershuckie_replay_recorder::{ByteVec, Packet, UnsignedInteger};
 
 pub mod emulator;
 
@@ -69,7 +66,7 @@ pub struct SuperShuckieCore {
     replay_stalled: bool,
 
     input_scratch_buffer: Vec<u8>,
-    milliseconds: Arc<AtomicU32>,
+    total_milliseconds: u32,
 
     game_speed: Speed,
     ticks_per_second: f64,
@@ -134,7 +131,7 @@ impl SuperShuckieCore {
             current_input: Default::default(),
             mid_frame: false,
             input_scratch_buffer: Vec::new(),
-            milliseconds: Arc::new(Default::default()),
+            total_milliseconds: 0,
             game_speed: Default::default(),
             ticks_per_second: emulator_core.ticks_per_second(),
             ticks_over_256: 0,
@@ -169,7 +166,7 @@ impl SuperShuckieCore {
         if !self.replay_stalled {
             let time = self.core.run_unlocked();
             self.after_run(&time);
-            }
+        }
     }
 
     /// Enqueue a write for the next frame.
@@ -209,7 +206,6 @@ impl SuperShuckieCore {
         loop {
             match player.next_packet() {
                 Ok(None) => {
-                    eprintln!("Replay ended!");
                     self.replay_stalled = true;
                     break;
                 },
@@ -238,8 +234,7 @@ impl SuperShuckieCore {
                         Packet::CompressedBlob { .. } => unreachable!("compressed blob")
                     }
                 }
-                Err(e) => {
-                    eprintln!("ERROR: {e:?}");
+                Err(_) => {
                     self.replay_stalled = true;
                     break
                 }
@@ -355,20 +350,27 @@ impl SuperShuckieCore {
         TS: ReplayFileSink + Send + Sync + 'static
     >(&mut self, partial_replay_record_metadata: PartialReplayRecordMetadata<FS, TS>) -> Result<(), ReplayFileWriteError> {
         self.stop_recording_replay();
+        self.detach_replay_player();
 
         let console_type = self.core.replay_console_type().expect("NO CONSOLE_TYPE WHEN STARTING REPLAY OH NO");
         let rom_checksum = self.core.rom_checksum().to_owned();
         let bios_checksum = self.core.bios_checksum().to_owned();
         let emulator_core_name = self.core.core_name().to_owned();
-        let initial_state = ByteVec::Heap(self.core.create_save_state());
         let initial_input = self.current_input;
         let initial_speed = self.game_speed;
 
+        while self.mid_frame {
+            self.run_unlocked();
+        }
+
+        let initial_state = ByteVec::Heap(self.core.create_save_state());
         let mut initial_input_data = Vec::new();
         self.core.encode_input(initial_input, &mut initial_input_data);
+        self.core.set_input_encoded(&initial_input_data);
 
         self.ticks_over_256 = 0;
-        self.milliseconds.swap(0, Ordering::Relaxed);
+        self.total_frames = 0;
+        self.total_milliseconds = 0;
 
         let recorder = NonBlockingReplayFileRecorder::new(ReplayFileRecorder::new_with_metadata(
             ReplayFileMetadata {
@@ -384,7 +386,7 @@ impl SuperShuckieCore {
 
             ByteVec::new(),
             partial_replay_record_metadata.settings,
-            0,
+            self.ticks_over_256,
 
             ByteVec::Heap(initial_input_data),
             initial_speed,
@@ -403,7 +405,7 @@ impl SuperShuckieCore {
     ///
     /// This will reset to 0 whenever a replay is started.
     pub fn get_recording_milliseconds(&self) -> u32 {
-        self.milliseconds.load(Ordering::Relaxed)
+        self.total_milliseconds
     }
 
     /// Stop recording the current replay.
@@ -460,6 +462,7 @@ impl SuperShuckieCore {
 
         self.current_input = new_input;
         self.input_scratch_buffer.clear();
+
         self.core.encode_input(self.current_input, &mut self.input_scratch_buffer);
         self.core.set_input_encoded(self.input_scratch_buffer.as_slice());
 
@@ -494,7 +497,7 @@ impl SuperShuckieCore {
         //
         // And to minimize the size of numbers, we can simplify 1000/256 to 125/32.
         let ms = (((125 * self.ticks_over_256) as f64) / self.ticks_per_second) as u64 / 32;
-        self.milliseconds.swap(ms.min(u32::MAX as u64) as u32, Ordering::Relaxed);
+        self.total_milliseconds = ms.min(u32::MAX as u64) as u32;
 
         self.with_recorder(|f| {
             // Add frames...
