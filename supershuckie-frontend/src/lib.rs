@@ -709,8 +709,10 @@ impl SuperShuckieFrontend {
             rom_name: current_rom_name.to_string(),
             rom_filename: current_rom_name.to_string(),
 
-            // TODO: settings
-            settings: ReplayFileRecorderSettings::default(),
+            settings: ReplayFileRecorderSettings {
+                minimum_uncompressed_bytes_per_blob: self.settings.replay_settings.max_blob_size,
+                compression_level: self.settings.replay_settings.zstd_compression_level
+            },
 
             // TODO: patches
             patch_format: ReplayPatchFormat::Unpatched,

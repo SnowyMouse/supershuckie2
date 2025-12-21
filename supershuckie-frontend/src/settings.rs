@@ -8,6 +8,7 @@ use std::num::{NonZeroU8, NonZeroUsize};
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 use supershuckie_core::emulator::Input;
+use supershuckie_replay_recorder::replay_file::record::ReplayFileRecorderSettings;
 use crate::SETTINGS_FILE;
 use crate::util::UTF8CString;
 
@@ -47,6 +48,9 @@ pub struct Settings {
 
     #[serde(default = "KeyboardControls::default")]
     pub keyboard_controls: KeyboardControls,
+    
+    #[serde(default = "ReplaySettings::default")]
+    pub replay_settings: ReplaySettings,
 
     #[serde(default = "BTreeMap::default")]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -67,6 +71,29 @@ impl Settings {
         }
         self.rom_config.get_mut(rom).expect("we just added the rom??")
     }
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct ReplaySettings {
+    #[serde(default = "ReplaySettings::DEFAULT_MAX_BLOB_SIZE")]
+    pub max_blob_size: usize,
+
+    #[serde(default = "ReplaySettings::DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL")]
+    pub zstd_compression_level: i32
+}
+
+impl Default for ReplaySettings {
+    fn default() -> Self {
+        Self {
+            max_blob_size: Self::DEFAULT_MAX_BLOB_SIZE(),
+            zstd_compression_level: Self::DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL()
+        }
+    }
+}
+
+impl ReplaySettings {
+    const DEFAULT_MAX_BLOB_SIZE: fn() -> usize = || ReplayFileRecorderSettings::default().minimum_uncompressed_bytes_per_blob;
+    const DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL: fn() -> i32 = || ReplayFileRecorderSettings::default().compression_level;
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

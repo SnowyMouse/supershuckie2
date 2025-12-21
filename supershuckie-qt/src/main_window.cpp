@@ -456,6 +456,13 @@ void SuperShuckieMainWindow::refresh_action_states() {
         this->record_replay->setEnabled(false);
         this->resume_replay->setEnabled(false);
 
+        // prevent loading any save states (quick_save is still allowed)
+        this->redo_load_save_state->setEnabled(false);
+        this->undo_load_save_state->setEnabled(false);
+        for(auto &state : this->quick_load_save_states) {
+            state->setEnabled(false);
+        }
+
         this->play_replay->setText("Stop replay");
     }
     else {
