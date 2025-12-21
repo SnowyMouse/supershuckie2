@@ -193,10 +193,11 @@ void SuperShuckieMainWindow::tick() {
     }
 
     bool is_recording = supershuckie_frontend_get_recording_replay_file(this->frontend) != nullptr;
-    bool is_playing_back = supershuckie_frontend_get_replay_playback_stats(this->frontend, nullptr, nullptr);
+    bool is_playing_back = supershuckie_frontend_get_replay_playback_time(this->frontend, nullptr, nullptr);
 
     if(is_recording || is_playing_back) {
-        std::uint32_t ms_total = supershuckie_frontend_get_recording_replay_milliseconds(this->frontend);
+        std::uint32_t ms_total;
+        supershuckie_frontend_get_elapsed_time(this->frontend, nullptr, &ms_total);
         this->status_bar_time->set_timestamp(ms_total);
         this->status_bar_time->show();
     }
@@ -448,7 +449,7 @@ void SuperShuckieMainWindow::refresh_action_states() {
 
         this->record_replay->setText("Stop recording replay");
     }
-    else if(this->frontend != nullptr && supershuckie_frontend_get_replay_playback_stats(this->frontend, nullptr, nullptr)) {
+    else if(this->frontend != nullptr && supershuckie_frontend_get_replay_playback_time(this->frontend, nullptr, nullptr)) {
         this->play_replay->setEnabled(true);
         this->record_replay->setEnabled(false);
         this->resume_replay->setEnabled(false);
@@ -635,7 +636,7 @@ void SuperShuckieMainWindow::do_resume_replay() {
 }
 
 void SuperShuckieMainWindow::do_play_replay() {
-    if(supershuckie_frontend_get_replay_playback_stats(this->frontend, nullptr, nullptr)) {
+    if(supershuckie_frontend_get_replay_playback_time(this->frontend, nullptr, nullptr)) {
         supershuckie_frontend_stop_replay_playback(this->frontend);
         this->refresh_action_states();
         this->set_title("Closed replay");

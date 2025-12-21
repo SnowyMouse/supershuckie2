@@ -181,11 +181,6 @@ bool supershuckie_frontend_start_recording_replay(struct SuperShuckieFrontendRaw
 void supershuckie_frontend_stop_recording_replay(struct SuperShuckieFrontendRaw *frontend);
 
 /**
- * Get the number of milliseconds.
- */
-uint32_t supershuckie_frontend_get_recording_replay_milliseconds(const struct SuperShuckieFrontendRaw *frontend);
-
-/**
  * Get whether or not Poke-A-Byte is enabled.
  *
  * If false, error may be filled with error data if there is any error data (or it will be empty if it is simply not
@@ -271,10 +266,21 @@ bool supershuckie_frontend_save_sram(struct SuperShuckieFrontendRaw *frontend, c
  *
  * total_frames and total_milliseconds, if non-null, will be written their respective values.
  */
-bool supershuckie_frontend_get_replay_playback_stats(
+bool supershuckie_frontend_get_replay_playback_time(
     const struct SuperShuckieFrontendRaw *frontend,
     uint32_t *total_frames,
     uint32_t *total_milliseconds
+);
+
+/**
+ * Get the number of milliseconds and frames elapsed.
+ *
+ * elapsed_frames and elapsed_milliseconds, if non-null, will be written their respective values.
+ */
+void supershuckie_frontend_get_elapsed_time(
+    const struct SuperShuckieFrontendRaw *frontend,
+    uint32_t *elapsed_frames,
+    uint32_t *elapsed_milliseconds
 );
 
 /**

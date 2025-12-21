@@ -631,7 +631,7 @@ impl SuperShuckieFrontend {
     }
 
     fn refresh_screen(&mut self, force: bool) {
-        let current_frame_count = self.core.get_frame_count();
+        let current_frame_count = self.core.get_elapsed_frames();
         if force || current_frame_count == self.frame_count {
             return
         }
@@ -662,9 +662,14 @@ impl SuperShuckieFrontend {
         self.save_file.as_ref().map(|i| i.as_c_str())
     }
 
-    /// Get the number of milliseconds the replay is at.
-    pub fn get_recorded_replay_milliseconds(&self) -> u32 {
-        self.core.get_recorded_replay_milliseconds()
+    /// Get the number of milliseconds elapsed.
+    pub fn get_elapsed_milliseconds(&self) -> u32 {
+        self.core.get_elapsed_milliseconds()
+    }
+
+    /// Get the number of milliseconds elapsed.
+    pub fn get_elapsed_frames(&self) -> u32 {
+        self.core.get_elapsed_frames()
     }
 
     /// Save the settings to disk.

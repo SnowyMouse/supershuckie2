@@ -235,13 +235,6 @@ pub unsafe extern "C" fn supershuckie_frontend_get_recording_replay_file(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn supershuckie_frontend_get_recording_replay_milliseconds(
-    frontend: &SuperShuckieFrontend
-) -> u32 {
-    frontend.get_recorded_replay_milliseconds()
-}
-
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn supershuckie_frontend_create_save_state(
     frontend: &mut SuperShuckieFrontend,
     name: *const c_char,
@@ -464,7 +457,20 @@ pub unsafe extern "C" fn supershuckie_frontend_get_all_save_states_for_rom(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn supershuckie_frontend_get_replay_playback_stats(
+pub unsafe extern "C" fn supershuckie_frontend_get_elapsed_time(
+    frontend: &SuperShuckieFrontend,
+    elapsed_frames: *mut u32,
+    elapsed_milliseconds: *mut u32
+) {
+    let elapsed_frames = unsafe { if elapsed_frames.is_null() { &mut 0 } else { &mut *elapsed_frames } };
+    let elapsed_milliseconds = unsafe { if elapsed_milliseconds.is_null() { &mut 0 } else { &mut *elapsed_milliseconds } };
+
+    *elapsed_milliseconds = frontend.get_elapsed_milliseconds();
+    *elapsed_frames = frontend.get_elapsed_frames();
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_get_replay_playback_time(
     frontend: &SuperShuckieFrontend,
     total_frames: *mut u32,
     total_milliseconds: *mut u32

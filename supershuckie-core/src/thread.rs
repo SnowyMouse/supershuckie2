@@ -23,7 +23,7 @@ pub struct ThreadedSuperShuckieCore {
     receiver_close: Receiver<()>,
 
     frame_count: Arc<AtomicU32>,
-    replay_milliseconds: Arc<AtomicU32>,
+    elapsed_milliseconds: Arc<AtomicU32>,
 
     playback_total_frames: UnsignedInteger,
     playback_total_milliseconds: UnsignedInteger,
@@ -66,7 +66,7 @@ impl ThreadedSuperShuckieCore {
             screens,
             receiver_close,
             frame_count,
-            replay_milliseconds,
+            elapsed_milliseconds: replay_milliseconds,
             playback_total_frames,
             playback_total_milliseconds
         }
@@ -76,7 +76,7 @@ impl ThreadedSuperShuckieCore {
     ///
     /// This can be called to ensure that a unique frame is ready to be read. Note, however, that
     /// this number may be slightly outdated.
-    pub fn get_frame_count(&self) -> u32 {
+    pub fn get_elapsed_frames(&self) -> u32 {
         self.frame_count.load(Ordering::Relaxed)
     }
 
@@ -189,8 +189,8 @@ impl ThreadedSuperShuckieCore {
 
     /// Get the number of milliseconds a replay has been recorded.
     #[inline]
-    pub fn get_recorded_replay_milliseconds(&self) -> u32 {
-        self.replay_milliseconds.load(Ordering::Relaxed)
+    pub fn get_elapsed_milliseconds(&self) -> u32 {
+        self.elapsed_milliseconds.load(Ordering::Relaxed)
     }
 
     /// Get the total number of frames in the current playback.
