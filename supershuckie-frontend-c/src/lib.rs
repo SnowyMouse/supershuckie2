@@ -308,6 +308,13 @@ pub unsafe extern "C" fn supershuckie_frontend_is_pokeabyte_enabled(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_is_paused(
+    frontend: &SuperShuckieFrontend
+) -> bool {
+    frontend.is_paused()
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn supershuckie_frontend_set_pokeabyte_enabled(
     frontend: &mut SuperShuckieFrontend,
     enabled: bool,

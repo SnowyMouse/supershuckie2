@@ -169,6 +169,13 @@ impl SuperShuckieCore {
         }
     }
 
+    /// Run unlocked until the next frame.
+    pub fn finish_current_frame(&mut self) {
+        while self.mid_frame && !self.replay_stalled {
+            self.run_unlocked();
+        }
+    }
+
     /// Enqueue a write for the next frame.
     pub fn enqueue_write(&mut self, address: u32, data: ByteVec) {
         self.writes.push(QueuedWrite { address, data });
@@ -184,6 +191,7 @@ impl SuperShuckieCore {
     pub fn set_speed(&mut self, speed: Speed) {
         self.game_speed = Speed::from_multiplier_float(speed.into_multiplier_float());
         self.core.set_speed(speed.into_multiplier_float());
+        self.with_recorder(|r| r.set_speed(speed));
     }
 
     fn handle_replay(&mut self) {
@@ -228,7 +236,10 @@ impl SuperShuckieCore {
                         Packet::ResetConsole => {
                             self.hard_reset();
                         }
-                        Packet::RestoreState { .. } => todo!("restore state unsupported"),
+                        Packet::LoadSaveState { state } => {
+                            self.mid_frame = false;
+                            let _ = self.core.load_save_state(state.as_slice());
+                        },
                         Packet::Bookmark { .. } => {}
                         Packet::Keyframe { .. } => {}
                         Packet::CompressedBlob { .. } => unreachable!("compressed blob")
@@ -329,12 +340,21 @@ impl SuperShuckieCore {
 
     /// Load a save state.
     pub fn load_save_state(&mut self, state: &[u8]) {
-        if self.replay_file_recorder.is_some() {
-            // TODO: not able to load save states while recording (need to add this to the replay file)
+        if self.replay_player.is_some() {
             return
         }
 
+        self.mid_frame = false;
         let _ = self.core.load_save_state(state);
+
+        if self.replay_file_recorder.is_some() {
+            self.with_recorder(|r| r.load_save_state(state.into()));
+        }
+        else {
+            self.mid_frame = true;
+            self.finish_current_frame();
+            let _ = self.core.load_save_state(state);
+        }
     }
 
     /// Set the current toggled input.
@@ -359,9 +379,7 @@ impl SuperShuckieCore {
         let initial_input = self.current_input;
         let initial_speed = self.game_speed;
 
-        while self.mid_frame {
-            self.run_unlocked();
-        }
+        self.finish_current_frame();
 
         let initial_state = ByteVec::Heap(self.core.create_save_state());
         let mut initial_input_data = Vec::new();

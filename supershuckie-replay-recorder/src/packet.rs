@@ -40,9 +40,9 @@ pub enum Packet {
     /// Hard reset the console.
     ResetConsole,
 
-    /// Load a save state at the given keyframe.
+    /// Load a save state.
     #[allow(missing_docs)]
-    RestoreState { keyframe_frame_index: UnsignedInteger },
+    LoadSaveState { state: ByteVec },
 
     /// Describes a named point in the replay.
     #[allow(missing_docs)]

@@ -285,7 +285,7 @@ pub enum PacketDiscriminator {
     ResetConsole = 0xF3,
 
     /// Load the save state at the given keyframe
-    RestoreState = 0xF4,
+    LoadSaveState = 0xF4,
 
     /// Compressed blob
     CompressedBlob = 0xFE,
@@ -348,7 +348,7 @@ impl Packet {
         match self {
             Packet::NoOp => PacketDiscriminator::NoOp as u8,
             Packet::ResetConsole => PacketDiscriminator::ResetConsole as u8,
-            Packet::RestoreState { .. } => PacketDiscriminator::RestoreState as u8,
+            Packet::LoadSaveState { .. } => PacketDiscriminator::LoadSaveState as u8,
             Packet::RunFrames { frames } => if *frames < PacketDiscriminator::RunFrameVar as UnsignedInteger { *frames as u8 } else { PacketDiscriminator::RunFrameVar as u8 },
             Packet::WriteMemory { data, .. } => match data.len() {
                 1 => PacketDiscriminator::WriteMemory8 as u8,
@@ -439,8 +439,8 @@ impl PacketIO<'_> for Packet {
                 commands.extend(speed.write_packet_instructions());
             },
 
-            Packet::RestoreState { keyframe_frame_index } => {
-                (commands).extend(keyframe_frame_index.write_packet_instructions())
+            Packet::LoadSaveState { state } => {
+                (commands).extend(state.write_packet_instructions())
             }
         }
 
@@ -489,7 +489,7 @@ impl PacketIO<'_> for Packet {
         match t {
             PacketDiscriminator::NoOp | PacketDiscriminator::ResetConsole | PacketDiscriminator::RunFrameN => unreachable!("{t:?} should have already been handled"),
             PacketDiscriminator::RunFrameVar => Ok(Packet::RunFrames { frames: UnsignedInteger::read_all(from)? }),
-            PacketDiscriminator::RestoreState => Ok(Packet::RestoreState { keyframe_frame_index: UnsignedInteger::read_all(from)? }),
+            PacketDiscriminator::LoadSaveState => Ok(Packet::LoadSaveState { state: ByteVec::read_all(from)? }),
             PacketDiscriminator::ChangeInput8 => change_input!(u8),
             PacketDiscriminator::ChangeInput16 => change_input!(u16),
             PacketDiscriminator::ChangeInput32 => change_input!(u32),

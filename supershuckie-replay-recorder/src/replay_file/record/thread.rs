@@ -116,8 +116,8 @@ impl<Final: ReplayFileSink + Send + 'static, Temp: ReplayFileSink + Send + 'stat
     }
 
     /// Load the keyframe at the given frame index.
-    pub fn restore_state(&mut self, keyframe_frame_index: u64) {
-        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::RestoreState { keyframe_frame_index });
+    pub fn load_save_state(&mut self, state: ByteVec) {
+        let _ = self.sender.send(ThreadedReplayFileRecorderCommand::LoadSaveState { state });
     }
 
     /// Check for errors, if any.
@@ -189,8 +189,8 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ThreadedReplayFileRecorderThre
                 recorder.next_frame();
                 Ok(())
             },
-            ThreadedReplayFileRecorderCommand::RestoreState { keyframe_frame_index } => {
-                recorder.restore_state(keyframe_frame_index)
+            ThreadedReplayFileRecorderCommand::LoadSaveState { state } => {
+                recorder.load_save_state(state)
             }
         }
     }
@@ -203,7 +203,7 @@ enum ThreadedReplayFileRecorderCommand {
     SetInput { input: InputBuffer },
     SetSpeed { speed: Speed },
     WriteMemory { address: UnsignedInteger, data: ByteVec },
-    RestoreState { keyframe_frame_index: UnsignedInteger },
+    LoadSaveState { state: ByteVec },
     ResetConsole,
     Close
 }
@@ -267,8 +267,8 @@ impl<Final: ReplayFileSink + Sync + Send + 'static, Temp: ReplayFileSink + Sync 
     }
 
     #[inline]
-    fn restore_state(&mut self, keyframe_frame_index: u64) -> Result<(), ReplayFileWriteError> {
-        self.restore_state(keyframe_frame_index);
+    fn load_save_state(&mut self, state: ByteVec) -> Result<(), ReplayFileWriteError> {
+        self.load_save_state(state);
         Ok(())
     }
 }

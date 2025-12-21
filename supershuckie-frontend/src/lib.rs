@@ -519,6 +519,11 @@ impl SuperShuckieFrontend {
         }
     }
 
+    /// Get whether or not the game is manually paused
+    pub fn is_paused(&self) -> bool {
+        self.settings.emulation.paused
+    }
+
     /// Save the SRAM.
     pub fn save_sram(&mut self) -> Result<(), UTF8CString> {
         if !self.is_game_running() {

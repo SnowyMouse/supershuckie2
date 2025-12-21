@@ -305,14 +305,9 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
         self.write_packet_data(&Packet::ChangeSpeed { speed })
     }
 
-    /// Load the keyframe at the given frame index.
-    pub fn restore_state(&mut self, keyframe_frame_index: u64) -> Result<(), ReplayFileWriteError> {
-        if self.all_keyframes.binary_search(&keyframe_frame_index).is_err() {
-            return Err(ReplayFileWriteError::BadInput { explanation: Cow::Owned(format!("No keyframe at frame# {keyframe_frame_index}")) });
-        }
-        self.do_with_poison(|this| {
-            this.write_packet_data(&Packet::RestoreState { keyframe_frame_index })
-        })
+    /// Load a given save state immediately.
+    pub fn load_save_state(&mut self, state: ByteVec) -> Result<(), ReplayFileWriteError> {
+        self.write_packet_data(&Packet::LoadSaveState { state })
     }
 
     fn write_packet_data<'a, P: PacketIO<'a>>(&mut self, what: &'a P) -> Result<(), ReplayFileWriteError> {
@@ -495,7 +490,7 @@ pub trait ReplayFileRecorderFns: core::any::Any + 'static + Send {
     fn reset_console(&mut self) -> Result<(), ReplayFileWriteError>;
     fn write_memory(&mut self, address: UnsignedInteger, data: ByteVec) -> Result<(), ReplayFileWriteError>;
     fn set_speed(&mut self, speed: Speed) -> Result<(), ReplayFileWriteError>;
-    fn restore_state(&mut self, keyframe_frame_index: u64) -> Result<(), ReplayFileWriteError>;
+    fn load_save_state(&mut self, state: ByteVec) -> Result<(), ReplayFileWriteError>;
 }
 
 impl<Final: ReplayFileSink + 'static + Send, Temp: ReplayFileSink + 'static + Send> ReplayFileRecorderFns for ReplayFileRecorder<Final, Temp> {
@@ -547,8 +542,8 @@ impl<Final: ReplayFileSink + 'static + Send, Temp: ReplayFileSink + 'static + Se
     }
 
     #[inline]
-    fn restore_state(&mut self, keyframe_frame_index: u64) -> Result<(), ReplayFileWriteError> {
-        self.restore_state(keyframe_frame_index)
+    fn load_save_state(&mut self, state: ByteVec) -> Result<(), ReplayFileWriteError> {
+        self.load_save_state(state)
     }
 }
 

@@ -461,6 +461,7 @@ impl ThreadedSuperShuckieCoreThread {
                 self.core.hard_reset();
             }
             ThreadCommand::CreateSaveState(sender) => {
+                self.core.finish_current_frame();
                 let _ = sender.send(self.core.create_save_state());
             }
             ThreadCommand::LoadSaveState(state) => {

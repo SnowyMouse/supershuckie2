@@ -133,6 +133,8 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
             this->setGeometry(geometry);
         }
     }
+
+    this->pause->setChecked(supershuckie_frontend_is_paused(this->frontend));
 }
 
 void SuperShuckieMainWindow::set_title(const char *title) {

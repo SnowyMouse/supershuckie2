@@ -202,6 +202,11 @@ bool supershuckie_frontend_is_pokeabyte_enabled(const struct SuperShuckieFronten
 bool supershuckie_frontend_set_pokeabyte_enabled(const struct SuperShuckieFrontendRaw *frontend, bool enabled, char *error, size_t error_len);
 
 /**
+ * Return true if the emulator is currently manually paused.
+ */
+bool supershuckie_frontend_is_paused(const struct SuperShuckieFrontendRaw *frontend);
+
+/**
  * Get the currently recorded replay file, or nullptr if none.
  */
 const char *supershuckie_frontend_get_recording_replay_file(const struct SuperShuckieFrontendRaw *frontend);
