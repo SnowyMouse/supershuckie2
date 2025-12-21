@@ -27,6 +27,7 @@ use std::{
     io::{Seek, SeekFrom, Write},
     fs::File
 };
+use std::println;
 
 /// Records a replay file
 ///
@@ -180,6 +181,7 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
 
     /// Advance a new frame.
     pub fn next_frame(&mut self) {
+        self.frames_since_last_non_frames_packet += 1;
         self.elapsed_frames += 1;
     }
 
@@ -231,7 +233,7 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
     fn next_blob(&mut self) -> Result<(), ReplayFileWriteError> {
         self.do_with_poison(|this| {
             // Close off any pending frames
-            this.write_run_frame_packet()?;
+            this.write_run_frame_packet_unchecked()?;
 
             let uncompressed_size = this.current_blob.len();
             let compressed = crate::compress_data(this.current_blob.as_slice(), this.settings.compression_level)
@@ -314,13 +316,17 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
 
     fn write_packet_data<'a, P: PacketIO<'a>>(&mut self, what: &'a P) -> Result<(), ReplayFileWriteError> {
         self.do_with_poison(|this| {
-            this.write_run_frame_packet()?;
-
-            let instructions = what.write_packet_instructions();
-            this.current_blob.write_packet_data(&instructions)?;
-            this.sink.as_mut().expect("write_packet_data on None sink").temp_sink.write_packet_data(&instructions)?;
+            this.write_run_frame_packet_unchecked()?;
+            this.write_packet_unchecked(what)?;
             Ok(())
         })
+    }
+
+    fn write_packet_unchecked<'a, P: PacketIO<'a>>(&mut self, what: &'a P) -> Result<(), ReplayFileWriteError> {
+        let instructions = what.write_packet_instructions();
+        self.current_blob.write_packet_data(&instructions)?;
+        self.sink.as_mut().expect("write_packet_data on None sink").temp_sink.write_packet_data(&instructions)?;
+        Ok(())
     }
 
     fn get_sinks(&mut self) -> (&mut Final, &mut Temp) {
@@ -329,10 +335,10 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
         (&mut sink.final_sink, &mut sink.temp_sink)
     }
 
-    fn write_run_frame_packet(&mut self) -> Result<(), ReplayFileWriteError> {
+    fn write_run_frame_packet_unchecked(&mut self) -> Result<(), ReplayFileWriteError> {
         let frames_since_last_non_frames = core::mem::take(&mut self.frames_since_last_non_frames_packet);
         if frames_since_last_non_frames > 0 {
-            self.write_packet_data(&Packet::RunFrames { frames: frames_since_last_non_frames })?;
+            self.write_packet_unchecked(&Packet::RunFrames { frames: frames_since_last_non_frames })?;
         }
         Ok(())
     }

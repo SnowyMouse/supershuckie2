@@ -27,6 +27,7 @@ use core::mem::transmute;
 use alloc::sync::Arc;
 use alloc::collections::BTreeMap;
 use alloc::vec;
+use std::println;
 use crate::replay_file::{ReplayFileMetadata, ReplayHeaderBytes, ReplayHeaderRaw};
 use crate::{BookmarkMetadata, KeyframeMetadata, Packet, PacketIO, PacketReadError, UnsignedInteger};
 use crate::util::{decompress_data, launder_reference};
@@ -318,18 +319,14 @@ impl ReplayFilePlayer {
                 Packet::Keyframe { metadata, .. } => {
                     if metadata.elapsed_frames == keyframe_frames_index {
                         self.next_compressed_packet_index = Some(subpacket_index);
-                        break
+                        return Ok(())
                     }
                 },
                 _ => continue
             }
         }
 
-        if self.next_compressed_packet_index.is_none() {
-            unreachable!("failed to find keyframe somehow even though we somehow had it in self.keyframes...");
-        }
-
-        Ok(())
+        unreachable!("failed to find keyframe somehow even though we somehow had it in self.keyframes...");
     }
 
     fn decompress_immediately(&mut self, blob_packet_index: usize) -> Result<(), ReplayFileReadError> {

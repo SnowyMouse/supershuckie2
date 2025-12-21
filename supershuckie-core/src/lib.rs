@@ -16,10 +16,11 @@ use alloc::vec::Vec;
 use core::fmt::{Display, Formatter};
 use core::num::NonZeroU64;
 use core::sync::atomic::{AtomicU32, Ordering};
+use std::{eprintln, println};
 use supershuckie_replay_recorder::replay_file::playback::{ReplayFilePlayer, ReplaySeekError};
 use supershuckie_replay_recorder::replay_file::record::{NonBlockingReplayFileRecorder, ReplayFileRecorder, ReplayFileRecorderFns, ReplayFileSink, ReplayFileWriteError};
 use supershuckie_replay_recorder::replay_file::{blake3_hash_to_ascii, ReplayFileMetadata, ReplayHeaderBlake3Hash, ReplayPatchFormat};
-use supershuckie_replay_recorder::{ByteVec, Packet, UnsignedInteger};
+use supershuckie_replay_recorder::{ByteVec, Packet, PacketIO, UnsignedInteger};
 
 pub mod emulator;
 
@@ -65,6 +66,7 @@ pub struct SuperShuckieCore {
     replay_frames_delay: UnsignedInteger,
 
     mid_frame: bool,
+    replay_stalled: bool,
 
     input_scratch_buffer: Vec<u8>,
     milliseconds: Arc<AtomicU32>,
@@ -141,22 +143,33 @@ impl SuperShuckieCore {
             total_frames: 0,
             replay_player: None,
             replay_frames_delay: 0u64,
+            replay_stalled: false,
             core: emulator_core,
         }
     }
 
     /// Run the emulator core for the shortest amount of time.
     pub fn run(&mut self) {
-        self.before_run();
-        let time = self.core.run();
-        self.after_run(&time);
+        if !self.replay_stalled {
+            self.before_run();
+        }
+
+        if !self.replay_stalled {
+            let time = self.core.run();
+            self.after_run(&time);
+        }
     }
 
     /// Run the emulator core for the shortest amount of time without any timekeeping.
     pub fn run_unlocked(&mut self) {
-        self.before_run();
-        let time = self.core.run_unlocked();
-        self.after_run(&time);
+        if !self.replay_stalled {
+            self.before_run();
+        }
+
+        if !self.replay_stalled {
+            let time = self.core.run_unlocked();
+            self.after_run(&time);
+            }
     }
 
     /// Enqueue a write for the next frame.
@@ -176,12 +189,32 @@ impl SuperShuckieCore {
         self.core.set_speed(speed.into_multiplier_float());
     }
 
-    fn before_run(&mut self) {
-        if !self.mid_frame && self.replay_frames_delay == 0 && let Some(mut player) = self.replay_player.take() {
-            loop {
-                match player.next_packet() {
-                    Ok(None) => break,
-                    Ok(Some(n)) => match n {
+    fn handle_replay(&mut self) {
+        if self.replay_stalled {
+            return
+        }
+
+        if self.mid_frame {
+            return
+        }
+
+        if self.replay_frames_delay != 0 {
+            return
+        }
+
+        let Some(mut player) = self.replay_player.take() else {
+            return
+        };
+
+        loop {
+            match player.next_packet() {
+                Ok(None) => {
+                    eprintln!("Replay ended!");
+                    self.replay_stalled = true;
+                    break;
+                },
+                Ok(Some(n)) => {
+                    match n {
                         Packet::NoOp => {}
                         Packet::RunFrames { frames } => {
                             self.replay_frames_delay = *frames;
@@ -204,12 +237,20 @@ impl SuperShuckieCore {
                         Packet::Keyframe { .. } => {}
                         Packet::CompressedBlob { .. } => unreachable!("compressed blob")
                     }
-                    Err(_) => break
+                }
+                Err(e) => {
+                    eprintln!("ERROR: {e:?}");
+                    self.replay_stalled = true;
+                    break
                 }
             }
-            self.replay_player = Some(player);
         }
 
+        self.replay_player = Some(player);
+    }
+
+    fn before_run(&mut self) {
+        self.handle_replay();
         self.update_input();
         self.flush_writes();
     }
@@ -354,7 +395,7 @@ impl SuperShuckieCore {
 
         self.frames_per_keyframe = partial_replay_record_metadata.frames_per_keyframe;
         self.replay_file_recorder = Some(Box::new(recorder));
-        
+
         Ok(())
     }
 
@@ -521,6 +562,7 @@ impl SuperShuckieCore {
         self.current_input = Input::new();
         self.next_input = None;
         self.replay_player = Some(player);
+        self.replay_stalled = false;
 
         self.go_to_replay_frame(0);
 
@@ -529,6 +571,7 @@ impl SuperShuckieCore {
 
     /// Detach the current replay player.
     pub fn detach_replay_player(&mut self) {
+        self.replay_stalled = false;
         self.replay_player = None;
     }
 
@@ -564,12 +607,14 @@ impl SuperShuckieCore {
 
         self.core.load_save_state(state.as_slice()).expect("replay file is broken (can't load save state) and error handling not yet implemented!");
         self.core.set_input_encoded(metadata.input.as_slice());
+        self.mid_frame = false;
 
         self.total_frames = metadata.elapsed_frames;
+        self.replay_stalled = false;
         self.ticks_over_256 = metadata.elapsed_emulator_ticks_over_256;
         self.set_speed(speed);
 
-        while self.total_frames <= desired {
+        while self.total_frames <= desired && !self.replay_stalled {
             self.run_unlocked();
         }
     }

@@ -207,7 +207,8 @@ impl ThreadedSuperShuckieCore {
 
     /// Load the replay.
     pub fn attach_replay_player(&mut self, mut player: ReplayFilePlayer, allow_mismatch: bool) -> Result<(), ReplayPlayerAttachError> {
-        player.enable_threading();
+        // FIXME
+        // player.enable_threading();
 
         let total_ticks = player.get_total_ticks_over_256();
         let total_frames = player.get_total_frames();
