@@ -13,14 +13,20 @@ use std::vec::Vec;
 use std::format;
 #[cfg(feature = "pokeabyte")]
 use supershuckie_pokeabyte_integration::PokeAByteIntegrationServer;
+use supershuckie_replay_recorder::replay_file::playback::ReplayFilePlayer;
+use supershuckie_replay_recorder::UnsignedInteger;
 
 /// A (mostly) non-blocking, threaded wrapper for [`SuperShuckieCore`].
 pub struct ThreadedSuperShuckieCore {
     screens: Arc<Mutex<Vec<ScreenData>>>,
     sender: Sender<ThreadCommand>,
-    frame_count: Arc<AtomicU32>,
     receiver_close: Receiver<()>,
-    recording_replay_milliseconds: Arc<AtomicU32>
+
+    frame_count: Arc<AtomicU32>,
+    replay_milliseconds: Arc<AtomicU32>,
+
+    playback_total_frames: UnsignedInteger,
+    playback_total_milliseconds: UnsignedInteger,
 }
 
 impl ThreadedSuperShuckieCore {
@@ -31,12 +37,14 @@ impl ThreadedSuperShuckieCore {
         let (sender, receiver) = channel();
         let (sender_close, receiver_close) = channel();
 
-        let recording_replay_milliseconds = Arc::new(AtomicU32::new(0));
+        let replay_milliseconds = Arc::new(AtomicU32::new(0));
+        let playback_total_frames = 0;
+        let playback_total_milliseconds = 0;
 
         {
             let frame_count = frame_count.clone();
             let screens = Arc::downgrade(&screens);
-            let recording_replay_milliseconds = recording_replay_milliseconds.clone();
+            let replay_milliseconds = replay_milliseconds.clone();
             let _ = std::thread::Builder::new().name("ThreadedSuperShuckieCore".to_owned()).spawn(move || {
                 ThreadedSuperShuckieCoreThread {
                     screens,
@@ -48,7 +56,7 @@ impl ThreadedSuperShuckieCore {
                     receiver,
                     sender_close,
                     frame_count,
-                    recording_replay_milliseconds
+                    replay_milliseconds
                 }.run_thread();
             });
         }
@@ -58,7 +66,9 @@ impl ThreadedSuperShuckieCore {
             screens,
             receiver_close,
             frame_count,
-            recording_replay_milliseconds
+            replay_milliseconds,
+            playback_total_frames,
+            playback_total_milliseconds
         }
     }
 
@@ -171,8 +181,31 @@ impl ThreadedSuperShuckieCore {
     }
 
     /// Get the number of milliseconds a replay has been recorded.
+    #[inline]
     pub fn get_recorded_replay_milliseconds(&self) -> u32 {
-        self.recording_replay_milliseconds.load(Ordering::Relaxed)
+        self.replay_milliseconds.load(Ordering::Relaxed)
+    }
+
+    /// Get the total number of frames in the current playback.
+    #[inline]
+    pub fn get_playback_total_frames(&self) -> u32 {
+        self.playback_total_frames as u32
+    }
+
+    /// Get the total number of frames in the current playback.
+    #[inline]
+    pub fn get_playback_total_milliseconds(&self) -> u32 {
+        self.playback_total_milliseconds as u32
+    }
+
+    /// Load the replay.
+    pub fn load_replay(&mut self, replay: ReplayFilePlayer) {
+        let total_ticks = replay.get_total_ticks_over_256();
+        let total_frames = replay.get_total_frames();
+
+        self.playback_total_frames = total_frames;
+        self.playback_total_milliseconds = total_ticks;
+
     }
 }
 
@@ -210,7 +243,7 @@ struct ThreadedSuperShuckieCoreThread {
     screens_queued: Vec<ScreenData>,
     screen_ready_for_copy: bool,
     frame_count: Arc<AtomicU32>,
-    recording_replay_milliseconds: Arc<AtomicU32>,
+    replay_milliseconds: Arc<AtomicU32>,
 
     core: SuperShuckieCore,
     receiver: Receiver<ThreadCommand>,
@@ -234,7 +267,7 @@ impl ThreadedSuperShuckieCoreThread {
             self.refresh_screen_data(false);
             self.update_queued_screens();
             self.handle_pokeabyte_integration();
-            self.recording_replay_milliseconds.store(self.core.get_recording_milliseconds(), Ordering::Relaxed);
+            self.replay_milliseconds.store(self.core.get_recording_milliseconds(), Ordering::Relaxed);
 
             if self.is_running {
                 self.core.run();

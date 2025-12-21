@@ -42,6 +42,9 @@ pub struct ReplayFilePlayer {
     keyframes: KeyframeMap<'static>,
     bookmarks: BookmarkMap<'static>,
 
+    total_frame_count: UnsignedInteger,
+    total_ticks_over_256: UnsignedInteger,
+
     compressed_blobs_decompressing: BTreeMap<usize, Option<Arc<Mutex<PacketDecompressionStatus>>>>,
     compressed_blobs_finished: BTreeMap<usize, Option<Arc<Vec<Packet>>>>,
     compressed_blob_uncompressed_packet_indices: Vec<usize>,
@@ -58,7 +61,7 @@ impl ReplayFilePlayer {
     ///
     /// If `allow_some_corruption`, then the parser will break early if it detects a corrupted
     /// packet and there is still some sort of usable stream. Otherwise, it will return `Err`.
-    pub fn new_from_byte_buffer<B: AsRef<[u8]>>(data: B, allow_some_corruption: bool) -> Result<ReplayFilePlayer, ReplayFileReadError> {
+    pub fn new<B: AsRef<[u8]>>(data: B, allow_some_corruption: bool) -> Result<ReplayFilePlayer, ReplayFileReadError> {
         let buffer_bytes = data.as_ref();
         let Some(header_buffer) = buffer_bytes.get(..size_of::<ReplayHeaderBytes>()) else {
             return Err(ReplayFileReadError::InvalidReplayFile { explanation: Cow::Borrowed("cannot read header") });
@@ -122,13 +125,17 @@ impl ReplayFilePlayer {
         let mut all_keyframes = KeyframeMap::new();
         let mut all_bookmarks = BookmarkMap::new();
 
+        let mut total_frame_count: UnsignedInteger = 0;
+        let mut total_ticks_over_256: UnsignedInteger = 0;
+
         macro_rules! add_keyframe {
-            ($metadata:expr) => {
+            ($metadata:expr) => {{
+                total_frame_count = $metadata.elapsed_frames;
                 match all_keyframes.get_mut(&$metadata.elapsed_frames) {
                     Some(n) => n.push($metadata),
                     None => { all_keyframes.insert( $metadata.elapsed_frames, vec![$metadata]); }
                 }
-            };
+            }};
         }
 
         macro_rules! add_bookmark {
@@ -146,7 +153,13 @@ impl ReplayFilePlayer {
 
         for (packet_index, packet) in all_packets.iter().enumerate() {
             match packet {
-                Packet::CompressedBlob { keyframes, bookmarks, uncompressed_size, .. } => {
+                Packet::CompressedBlob {
+                    keyframes,
+                    bookmarks,
+                    uncompressed_size,
+                    elapsed_emulator_ticks_over_256_end,
+                    ..
+                } => {
                     // Vec works with up to isize maximum elements
                     if isize::try_from(*uncompressed_size).is_err() {
                         return Err(ReplayFileReadError::Other { explanation: Cow::Borrowed("Replay has a compressed blob that decompressed beyond the current architectural limits") });
@@ -165,10 +178,15 @@ impl ReplayFilePlayer {
                     for i in bookmarks {
                         add_bookmark!(i)
                     }
+
+                    total_ticks_over_256 = *elapsed_emulator_ticks_over_256_end;
                 },
                 Packet::Keyframe { metadata, .. } => {
                     add_keyframe!(metadata);
                 },
+                Packet::RunFrames { frames } => {
+                    total_frame_count += *frames;
+                }
                 Packet::Bookmark { metadata } => {
                     add_bookmark!(metadata);
                 },
@@ -191,12 +209,26 @@ impl ReplayFilePlayer {
             compressed_blob_uncompressed_packet_indices: compressed_blob_indices,
             compressed_blobs_decompressing: compressed_blobs,
             compressed_blobs_finished,
+            total_frame_count,
+            total_ticks_over_256,
 
             #[cfg(feature = "std")]
             threading: false
         };
 
         Ok(player)
+    }
+
+    /// Get the total frame count.
+    pub fn get_total_frames(&self) -> UnsignedInteger {
+        self.total_frame_count
+    }
+
+    /// Get the total ticks over 256.
+    ///
+    /// Note that if the replay was not properly finalized, this number may not be accurate.
+    pub fn get_total_ticks_over_256(&self) -> UnsignedInteger {
+        self.total_ticks_over_256
     }
 
     /// Enable decompression on a separate thread.

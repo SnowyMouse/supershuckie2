@@ -61,7 +61,11 @@ pub enum Packet {
         keyframes: Vec<KeyframeMetadata>,
         bookmarks: Vec<BookmarkMetadata>,
         compressed_data: ByteVec,
-        uncompressed_size: UnsignedInteger
+        uncompressed_size: UnsignedInteger,
+        elapsed_emulator_ticks_over_256_start: UnsignedInteger,
+        elapsed_emulator_ticks_over_256_end: UnsignedInteger,
+        elapsed_frames_start: UnsignedInteger,
+        elapsed_frames_end: UnsignedInteger
     }
 }
 

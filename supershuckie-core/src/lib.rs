@@ -13,9 +13,13 @@ use alloc::vec::Vec;
 use core::num::NonZeroU64;
 use core::sync::atomic::{AtomicU32, Ordering};
 use alloc::borrow::ToOwned;
+use alloc::format;
+use alloc::string::String;
+use core::fmt::{Display, Formatter};
 use supershuckie_replay_recorder::replay_file::record::{NonBlockingReplayFileRecorder, ReplayFileRecorder, ReplayFileRecorderFns, ReplayFileSink, ReplayFileWriteError};
-use supershuckie_replay_recorder::replay_file::{ReplayFileMetadata, ReplayHeaderBlake3Hash, ReplayPatchFormat};
+use supershuckie_replay_recorder::replay_file::{blake3_hash_to_ascii, ReplayFileMetadata, ReplayHeaderBlake3Hash, ReplayPatchFormat};
 use supershuckie_replay_recorder::{ByteVec, UnsignedInteger};
+use supershuckie_replay_recorder::replay_file::playback::ReplayFilePlayer;
 
 pub mod emulator;
 
@@ -33,6 +37,8 @@ pub use thread::*;
 pub struct SuperShuckieCore {
     core: Box<dyn EmulatorCore>,
     replay_file_recorder: Option<Box<dyn ReplayFileRecorderFns>>,
+
+    replay_player: Option<ReplayFilePlayer>,
 
     /// The current user-defined input.
     base_input: Input,
@@ -131,6 +137,7 @@ impl SuperShuckieCore {
             frames_since_last_keyframe: 0,
             frames_per_keyframe: 0,
             total_frames: 0,
+            replay_player: None,
             core: emulator_core,
         }
     }
@@ -424,5 +431,105 @@ impl SuperShuckieCore {
         self.with_recorder(|f| {
             let _ = f.insert_keyframe(save_state.unwrap(), elapsed_ticks);
         });
+    }
+
+    /// Attach a replay file player to the core.
+    pub fn attach_replay_player(&mut self, player: ReplayFilePlayer, allow_mismatched: bool) -> Result<(), ReplayPlayerAttachError> {
+        let metadata = player.get_replay_metadata();
+        let core_console_type = self.core.replay_console_type();
+
+        if Some(metadata.console_type) != core_console_type {
+            return Err(ReplayPlayerAttachError::Incompatible {
+                description: format!("Console types don't match! (replay: {:?}, rom: {core_console_type:?})", metadata.console_type)
+            })
+        }
+
+        if !allow_mismatched {
+            let mut mismatched_list = Vec::new();
+
+            let rom_checksum = *self.core.rom_checksum();
+            let bios_checksum = *self.core.bios_checksum();
+            let core_name = self.core.core_name();
+
+            if metadata.rom_checksum != rom_checksum {
+                mismatched_list.push(ReplayPlayerMetadataMismatchKind::ROMChecksumMismatch { replay: metadata.rom_checksum, loaded: bios_checksum })
+            }
+
+            if metadata.bios_checksum != bios_checksum {
+                mismatched_list.push(ReplayPlayerMetadataMismatchKind::BIOSChecksumMismatch { replay: metadata.rom_checksum, loaded: bios_checksum })
+            }
+
+            if metadata.emulator_core_name != core_name {
+                mismatched_list.push(ReplayPlayerMetadataMismatchKind::CoreMismatch { replay: metadata.emulator_core_name.clone(), loaded: core_name.to_owned() })
+            }
+
+            if !mismatched_list.is_empty() {
+                return Err(ReplayPlayerAttachError::MismatchedMetadata { issues: mismatched_list })
+            }
+        }
+
+        self.replay_player = Some(player);
+        Ok(())
+    }
+}
+
+/// Returns when an error occurs.
+#[derive(Clone, Debug)]
+pub enum ReplayPlayerAttachError {
+    /// Metadata is mismatched. It may desync.
+    #[allow(missing_docs)]
+    MismatchedMetadata {
+        issues: Vec<ReplayPlayerMetadataMismatchKind>
+    },
+
+    /// Metadata is mismatched.
+    #[allow(missing_docs)]
+    Incompatible {
+        description: String
+    }
+}
+
+/// Describes a metadata mismatch.
+#[derive(Clone, Debug)]
+#[allow(missing_docs)]
+pub enum ReplayPlayerMetadataMismatchKind {
+    ROMChecksumMismatch {
+        replay: ReplayHeaderBlake3Hash,
+        loaded: ReplayHeaderBlake3Hash
+    },
+
+    BIOSChecksumMismatch {
+        replay: ReplayHeaderBlake3Hash,
+        loaded: ReplayHeaderBlake3Hash
+    },
+
+    CoreMismatch {
+        replay: String,
+        loaded: String
+    }
+}
+
+impl Display for ReplayPlayerMetadataMismatchKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ReplayPlayerMetadataMismatchKind::ROMChecksumMismatch { replay, loaded } => {
+                f.write_fmt(format_args!(
+                    "ROM checksum mismatch! Either the wrong ROM is loaded, or it was modified.\n\n  Replay: {}\n  Loaded: {}\n\nThis can cause potential desyncs.",
+                    blake3_hash_to_ascii(*replay), blake3_hash_to_ascii(*loaded)
+                ))
+            }
+            ReplayPlayerMetadataMismatchKind::BIOSChecksumMismatch { replay, loaded } => {
+                f.write_fmt(format_args!(
+                    "BIOS checksum mismatch! Either the wrong BIOS is loaded, or it was modified.\n\n  Replay: {}\n  Loaded: {}\n\nThis can cause potential desyncs.",
+                    blake3_hash_to_ascii(*replay), blake3_hash_to_ascii(*loaded)
+                ))
+            }
+            ReplayPlayerMetadataMismatchKind::CoreMismatch { replay, loaded } => {
+                f.write_fmt(format_args!(
+                    "ROM core mismatch! Different cores or different versions of cores were used.\n\n  Replay: {}\n  Loaded: {}\n\nThis can cause potential desyncs UNLESS both cores have equal accuracy.",
+                    replay, loaded
+                ))
+            }
+        }
     }
 }

@@ -241,11 +241,18 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
 
             let keyframes_len = this.current_blob_keyframes.len();
 
+            let first_keyframe =  this.current_blob_keyframes.first().expect("no keyframes in blob?");
+
             let compressed_blob = Packet::CompressedBlob {
+                elapsed_frames_start: first_keyframe.elapsed_frames,
+                elapsed_frames_end: this.elapsed_frames,
+                elapsed_emulator_ticks_over_256_start: first_keyframe.elapsed_emulator_ticks_over_256,
+                elapsed_emulator_ticks_over_256_end: this.elapsed_ticks_over_256,
+
                 keyframes: core::mem::take(&mut this.current_blob_keyframes),
                 bookmarks: core::mem::take(&mut this.current_blob_bookmarks),
                 compressed_data: ByteVec::Heap(compressed),
-                uncompressed_size: u64::try_from(uncompressed_size).expect("failed to convert uncompressed_size from usize to u64")
+                uncompressed_size: u64::try_from(uncompressed_size).expect("failed to convert uncompressed_size from usize to u64"),
             };
 
             this.current_blob_keyframes.reserve(keyframes_len + 1024);

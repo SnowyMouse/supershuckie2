@@ -389,11 +389,24 @@ impl PacketIO<'_> for Packet {
                 }
             }
 
-            Packet::CompressedBlob { keyframes, bookmarks, compressed_data, uncompressed_size } => {
+            Packet::CompressedBlob {
+                keyframes,
+                bookmarks,
+                compressed_data,
+                uncompressed_size,
+                elapsed_emulator_ticks_over_256_start,
+                elapsed_emulator_ticks_over_256_end,
+                elapsed_frames_start,
+                elapsed_frames_end
+            } => {
                 commands.extend(keyframes.write_packet_instructions());
                 commands.extend(bookmarks.write_packet_instructions());
                 commands.extend(compressed_data.write_packet_instructions());
                 commands.extend(uncompressed_size.write_packet_instructions());
+                commands.extend(elapsed_emulator_ticks_over_256_start.write_packet_instructions());
+                commands.extend(elapsed_emulator_ticks_over_256_end.write_packet_instructions());
+                commands.extend(elapsed_frames_start.write_packet_instructions());
+                commands.extend(elapsed_frames_end.write_packet_instructions());
             }
 
             Packet::Keyframe { state, metadata } => {
@@ -471,7 +484,16 @@ impl PacketIO<'_> for Packet {
             PacketDiscriminator::Keyframe => Ok(Packet::Keyframe { metadata: KeyframeMetadata::read_all(from)?, state: ByteVec::read_all(from)? }),
             PacketDiscriminator::Bookmark => Ok(Packet::Bookmark { metadata: BookmarkMetadata::read_all(from)? }),
             PacketDiscriminator::ChangeSpeed => Ok(Packet::ChangeSpeed { speed: Speed::read_all(from)? }),
-            PacketDiscriminator::CompressedBlob => Ok(Packet::CompressedBlob { keyframes: Vec::read_all(from)?, bookmarks: Vec::read_all(from)?, compressed_data: ByteVec::read_all(from)?, uncompressed_size: UnsignedInteger::read_all(from)? }),
+            PacketDiscriminator::CompressedBlob => Ok(Packet::CompressedBlob {
+                keyframes: Vec::read_all(from)?,
+                bookmarks: Vec::read_all(from)?,
+                compressed_data: ByteVec::read_all(from)?,
+                uncompressed_size: UnsignedInteger::read_all(from)?,
+                elapsed_emulator_ticks_over_256_start: UnsignedInteger::read_all(from)?,
+                elapsed_emulator_ticks_over_256_end: UnsignedInteger::read_all(from)?,
+                elapsed_frames_start: UnsignedInteger::read_all(from)?,
+                elapsed_frames_end: UnsignedInteger::read_all(from)?
+            }),
         }
     }
 }
