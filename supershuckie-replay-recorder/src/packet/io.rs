@@ -36,6 +36,11 @@ impl Default for PacketWriteCommand<'_> {
 
 /// Defines data that can be written to/from a replay stream.
 pub trait PacketIO<'a>: Sized + 'a {
+    /// Readable-name of the packet.
+    fn name(&self) -> &'static str {
+        core::any::type_name_of_val(self)
+    }
+
     /// Get a list of write instructions.
     /// 
     /// You can use this to write the data to both buffers and streams without duplicating logic.
@@ -65,7 +70,7 @@ impl PacketIO<'_> for UnsignedInteger {
         bytes.extend_from_slice(self.to_le_bytes().as_slice());
 
         // get number of bytes needed to read it...
-        bytes.truncate((self.ilog2() as usize + 7) / 8);
+        bytes.truncate((1 + self.ilog2() / 8) as usize);
 
         let mut writer = PacketInstructionsVec::new();
         writer.push(PacketWriteCommand::WriteByte { byte: bytes.len() as u8 });
@@ -79,6 +84,7 @@ impl PacketIO<'_> for UnsignedInteger {
 
         // short circuit if 0
         if len_byte == 0 {
+            *what = remaining_bytes;
             return Ok(0)
         }
 
@@ -201,8 +207,19 @@ pub enum PacketReadError {
 fn static_packet_write_array_references<'a, 'b, const LEN: usize>(from: TinyVec<[PacketWriteCommand<'a>; LEN]>) -> TinyVec<[PacketWriteCommand<'b>; LEN]> {
     let mut result = TinyVec::new();
     for i in from {
+        let bytes = i.bytes();
+
+        if bytes.is_empty() {
+            continue
+        }
+
+        if bytes.len() == 1 {
+            result.push(PacketWriteCommand::WriteByte { byte: bytes[0] });
+            continue
+        }
+
         match i {
-            PacketWriteCommand::WriteByte { byte } => result.push(PacketWriteCommand::WriteByte { byte }),
+            PacketWriteCommand::WriteByte { .. } => unreachable!("already wrote a byte"),
             PacketWriteCommand::WriteVec { bytes } => result.push(PacketWriteCommand::WriteVec { bytes }),
             PacketWriteCommand::WriteSlice { bytes } => {
                 let mut v = TinyVec::new();

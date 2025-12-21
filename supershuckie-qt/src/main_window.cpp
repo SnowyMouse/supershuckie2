@@ -192,9 +192,10 @@ void SuperShuckieMainWindow::tick() {
         this->refresh_title();
     }
 
-    if(supershuckie_frontend_get_recording_replay_file(this->frontend) != nullptr) {
-        char timer[256];
+    bool is_recording = supershuckie_frontend_get_recording_replay_file(this->frontend) != nullptr;
+    bool is_playing_back = supershuckie_frontend_get_replay_playback_stats(this->frontend, nullptr, nullptr);
 
+    if(is_recording || is_playing_back) {
         std::uint32_t ms_total = supershuckie_frontend_get_recording_replay_milliseconds(this->frontend);
         this->status_bar_time->set_timestamp(ms_total);
         this->status_bar_time->show();
@@ -447,14 +448,13 @@ void SuperShuckieMainWindow::refresh_action_states() {
 
         this->record_replay->setText("Stop recording replay");
     }
-    // TODO
-    // else if(supershuckie_frontend_is_playing_back(this->frontend)) {
-    //     this->play_replay->setEnabled(true);
-    //     this->record_replay->setEnabled(false);
-    //     this->resume_replay->setEnabled(false);
+    else if(this->frontend != nullptr && supershuckie_frontend_get_replay_playback_stats(this->frontend, nullptr, nullptr)) {
+        this->play_replay->setEnabled(true);
+        this->record_replay->setEnabled(false);
+        this->resume_replay->setEnabled(false);
 
-    //     this->play_replay->setText("Stop replay");
-    // }
+        this->play_replay->setText("Stop replay");
+    }
     else {
         this->play_replay->setEnabled(true);
         this->record_replay->setEnabled(true);
@@ -635,8 +635,36 @@ void SuperShuckieMainWindow::do_resume_replay() {
 }
 
 void SuperShuckieMainWindow::do_play_replay() {
+    if(supershuckie_frontend_get_replay_playback_stats(this->frontend, nullptr, nullptr)) {
+        supershuckie_frontend_stop_replay_playback(this->frontend);
+        this->refresh_action_states();
+        this->set_title("Closed replay");
+        return;
+    }
+
     // FIXME
     auto replays = wrap_array_std(supershuckie_frontend_get_all_replays_for_rom(this->frontend, nullptr));
+
+    auto text = SelectItemDialog::ask(this, replays, "Select a replay", "Select a replay file to play.");
+    if(text == std::nullopt) {
+        return;
+    }
+
+    char err[256];
+    char fmt[512];
+    
+    if(!supershuckie_frontend_load_replay(this->frontend, text->c_str(), false, err, sizeof(err))) {
+        std::snprintf(fmt, sizeof(fmt), "%s", err);
+        DISPLAY_ERROR_DIALOG("Replay file issues detected", "%s", fmt);
+
+        if(!supershuckie_frontend_load_replay(this->frontend, text->c_str(), true, err, sizeof(err))) {
+            return;
+        }
+    }
+
+    std::snprintf(fmt, sizeof(fmt), "Opened replay file \"%s\"", text->c_str());
+    this->set_title(fmt);
+    this->refresh_action_states();
 }
 
 void SuperShuckieMainWindow::on_refresh_screens(void *user_data, std::size_t screen_count, const uint32_t *const *pixels) {

@@ -10,9 +10,10 @@ use std::num::{NonZeroU64, NonZeroU8};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use supershuckie_core::emulator::{EmulatorCore, GameBoyColor, Input, Model, NullEmulatorCore, PartialReplayRecordMetadata, ScreenData};
-use supershuckie_core::{Speed, SuperShuckieRapidFire, ThreadedSuperShuckieCore};
+use supershuckie_core::{ReplayPlayerAttachError, Speed, SuperShuckieRapidFire, ThreadedSuperShuckieCore};
 use supershuckie_replay_recorder::replay_file::{ReplayHeaderBlake3Hash, ReplayPatchFormat};
 use supershuckie_replay_recorder::ByteVec;
+use supershuckie_replay_recorder::replay_file::playback::ReplayFilePlayer;
 use supershuckie_replay_recorder::replay_file::record::ReplayFileRecorderSettings;
 
 const SETTINGS_FILE: &str = "settings.json";
@@ -142,7 +143,7 @@ impl SuperShuckieFrontend {
             return Err("Game not running".into())
         }
 
-        let current_rom_name = self.get_current_rom_name().expect("no rom name when game is running in load_save_state");
+        let current_rom_name = self.get_current_rom_name().expect("no rom name when game is running in load_save_state_if_exists");
         let save_states_dir = self.get_save_states_dir_for_rom(current_rom_name);
         let save_state_file = save_states_dir.join(format!("{name}.{SAVE_STATE_EXTENSION}"));
 
@@ -155,6 +156,79 @@ impl SuperShuckieFrontend {
         let save_state = std::fs::read(save_state_file).map_err(|e| format!("Failed to load save state {name}: {e}"))?;
         self.core.load_save_state(save_state);
         Ok(true)
+    }
+
+    /// Loads a replay with the given name if it exists.
+    ///
+    /// If it does, and it is successfully loaded, `Ok(true)` is returned.
+    ///
+    /// If it does not exist, `Ok(false)` is returned.
+    pub fn load_replay_if_exists(&mut self, name: &str, override_errors: bool) -> Result<bool, UTF8CString> {
+        if !self.is_game_running() {
+            return Err("Game not running".into())
+        }
+
+        let current_rom_name = self.get_current_rom_name().expect("no rom name when game is running in load_replay_if_exists");
+        let replay_dir = self.get_replays_dir_for_rom(current_rom_name);
+        let replay_file = replay_dir.join(format!("{name}.{REPLAY_EXTENSION}"));
+
+        if !replay_file.is_file() {
+            return Ok(false)
+        }
+
+        let file = match std::fs::read(replay_file) {
+            Ok(n) => n,
+            Err(e) => {
+                return Err(format!("Failed to read replay {name}:\n\n{e}").into())
+            }
+        };
+
+        let player = match ReplayFilePlayer::new(file, override_errors) {
+            Ok(n) => n,
+            Err(e) => {
+                return Err(format!("Failed to parse replay {name}:\n\n{e:?}").into())
+            }
+        };
+
+        if let Err(e) = self.core.attach_replay_player(player, override_errors) {
+            return match e {
+                ReplayPlayerAttachError::Incompatible { description } => {
+                    Err(format!("This replay file is incompatible:\n\n{description}").into())
+                }
+                ReplayPlayerAttachError::MismatchedMetadata { issues } => {
+                    let mut err = String::new();
+
+                    err += "This replay file has mismatched data which may prevent playback:";
+
+                    for issue in issues {
+                        err += "\n\n";
+                        err += &issue.to_string();
+                    }
+
+                    Err(err.into())
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
+    /// Stop playing back any currently playing replay.
+    #[inline]
+    pub fn stop_replay_playback(&mut self) {
+        self.core.detach_replay_player();
+    }
+
+    /// Get the replay playback stats if currently playing back.
+    pub fn get_replay_playback_stats(&self) -> Option<SuperShuckieReplayTimes> {
+        let frames = self.core.get_playback_total_frames();
+        let ms = self.core.get_playback_total_milliseconds();
+
+        if frames == 0 && ms == 0 {
+            return None
+        }
+
+        Some(SuperShuckieReplayTimes { total_milliseconds: ms, total_frames: frames })
     }
 
     fn push_save_state_history(&mut self) {
@@ -758,6 +832,12 @@ fn list_files_in_dir_with_extension(dir: &Path, extension: &str) -> Vec<UTF8CStr
     }
 
     options
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct SuperShuckieReplayTimes {
+    pub total_frames: u32,
+    pub total_milliseconds: u32
 }
 
 pub struct CoreMetadata {

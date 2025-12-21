@@ -22,7 +22,7 @@ pub fn blake3_hash_to_ascii(hash: ReplayHeaderBlake3Hash) -> String {
     let mut ascii = String::with_capacity(64);
 
     for b in hash {
-        let high = b >> 8;
+        let high = b >> 4;
         let low = b & 0xF;
 
         fn get_char(b: u8) -> char {
@@ -149,7 +149,7 @@ impl ReplayHeaderRaw {
     /// Returns an error with a description if it is invalid.
     pub fn parse(&self) -> Result<ReplayFileMetadata, String> {
         let signature_start = self.signature_start;
-        let signature_end = self.signature_start;
+        let signature_end = self.signature_end;
         let replay_version = self.replay_version;
 
         if signature_start != SIGNATURE_START {

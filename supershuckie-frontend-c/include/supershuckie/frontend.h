@@ -266,6 +266,36 @@ bool supershuckie_frontend_load_rom(struct SuperShuckieFrontendRaw *frontend, co
  */
 bool supershuckie_frontend_save_sram(struct SuperShuckieFrontendRaw *frontend, char *error, size_t error_len);
 
+/**
+ * Get the replay playback stats, returning true if currently playing back a replay.
+ *
+ * total_frames and total_milliseconds, if non-null, will be written their respective values.
+ */
+bool supershuckie_frontend_get_replay_playback_stats(
+    const struct SuperShuckieFrontendRaw *frontend,
+    uint32_t *total_frames,
+    uint32_t *total_milliseconds
+);
+
+/**
+ * Load the given replay, returning true or false depending on whether or not it was successfully loaded.
+ *
+ * Safety:
+ * - path must be null-terminated, UTF-8
+ * - error must point to a buffer of at least `error_len` bytes (it can be null if error_len is 0)
+ */
+bool supershuckie_frontend_load_replay(
+    struct SuperShuckieFrontendRaw *frontend,
+    const char *name,
+    bool ignore_some_errors,
+    char *error,
+    size_t error_len
+);
+
+/**
+ * Stop the currently playing replay, if any.
+ */
+void supershuckie_frontend_stop_replay_playback(struct SuperShuckieFrontendRaw *frontend);
 
 /**
  * If there is a ROM running, return the name. Otherwise, return null.

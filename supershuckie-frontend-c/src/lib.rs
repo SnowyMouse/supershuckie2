@@ -463,6 +463,55 @@ pub unsafe extern "C" fn supershuckie_frontend_get_all_save_states_for_rom(
     Box::into_raw(Box::new(array))
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_get_replay_playback_stats(
+    frontend: &SuperShuckieFrontend,
+    total_frames: *mut u32,
+    total_milliseconds: *mut u32
+) -> bool {
+    let total_frames = unsafe { if total_frames.is_null() { &mut 0 } else { &mut *total_frames } };
+    let total_milliseconds = unsafe { if total_milliseconds.is_null() { &mut 0 } else { &mut *total_milliseconds } };
+
+    match frontend.get_replay_playback_stats() {
+        Some(n) => {
+            *total_frames = n.total_frames;
+            *total_milliseconds = n.total_milliseconds;
+            true
+        },
+        None => {
+            *total_frames = 0;
+            *total_milliseconds = 0;
+            false
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_load_replay(
+    frontend: &mut SuperShuckieFrontend,
+    name: *const c_char,
+    override_errors: bool,
+    error: *mut u8,
+    error_len: usize
+) -> bool {
+    let name = unsafe { CStr::from_ptr(name).to_str().expect("replay name is not UTF-8") };
+
+    match frontend.load_replay_if_exists(name, override_errors) {
+        Ok(_) => true,
+        Err(e) => {
+            write_str_to_data(e.as_str(), unsafe { from_raw_parts_mut(error, error_len) });
+            false
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_stop_replay_playback(
+    frontend: &mut SuperShuckieFrontend
+) {
+    frontend.stop_replay_playback();
+}
+
 unsafe fn current_rom_or_null(frontend: &SuperShuckieFrontend, rom: *const c_char) -> Option<&str> {
     if rom.is_null() {
         frontend.get_current_rom_name()

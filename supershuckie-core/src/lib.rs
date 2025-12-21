@@ -7,19 +7,19 @@ extern crate alloc;
 extern crate std;
 
 use crate::emulator::{EmulatorCore, Input, PartialReplayRecordMetadata, RunTime};
-use alloc::boxed::Box;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-use core::num::NonZeroU64;
-use core::sync::atomic::{AtomicU32, Ordering};
 use alloc::borrow::ToOwned;
+use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::fmt::{Display, Formatter};
+use core::num::NonZeroU64;
+use core::sync::atomic::{AtomicU32, Ordering};
+use supershuckie_replay_recorder::replay_file::playback::{ReplayFilePlayer, ReplaySeekError};
 use supershuckie_replay_recorder::replay_file::record::{NonBlockingReplayFileRecorder, ReplayFileRecorder, ReplayFileRecorderFns, ReplayFileSink, ReplayFileWriteError};
 use supershuckie_replay_recorder::replay_file::{blake3_hash_to_ascii, ReplayFileMetadata, ReplayHeaderBlake3Hash, ReplayPatchFormat};
-use supershuckie_replay_recorder::{ByteVec, UnsignedInteger};
-use supershuckie_replay_recorder::replay_file::playback::ReplayFilePlayer;
+use supershuckie_replay_recorder::{ByteVec, Packet, UnsignedInteger};
 
 pub mod emulator;
 
@@ -61,6 +61,8 @@ pub struct SuperShuckieCore {
 
     /// The "total" input that was actually applied.
     current_input: Input,
+
+    replay_frames_delay: UnsignedInteger,
 
     mid_frame: bool,
 
@@ -138,6 +140,7 @@ impl SuperShuckieCore {
             frames_per_keyframe: 0,
             total_frames: 0,
             replay_player: None,
+            replay_frames_delay: 0u64,
             core: emulator_core,
         }
     }
@@ -174,6 +177,39 @@ impl SuperShuckieCore {
     }
 
     fn before_run(&mut self) {
+        if !self.mid_frame && self.replay_frames_delay == 0 && let Some(mut player) = self.replay_player.take() {
+            loop {
+                match player.next_packet() {
+                    Ok(None) => break,
+                    Ok(Some(n)) => match n {
+                        Packet::NoOp => {}
+                        Packet::RunFrames { frames } => {
+                            self.replay_frames_delay = *frames;
+                            break;
+                        }
+                        Packet::WriteMemory { address, data } => {
+                            self.core.write_ram(*address as u32, data.as_slice()).expect("failed to write RAM (and this was not handled)");
+                        }
+                        Packet::ChangeInput { data } => {
+                            self.core.set_input_encoded(data.as_slice());
+                        }
+                        Packet::ChangeSpeed { speed } => {
+                            self.set_speed(*speed);
+                        }
+                        Packet::ResetConsole => {
+                            self.hard_reset();
+                        }
+                        Packet::RestoreState { .. } => todo!("restore state unsupported"),
+                        Packet::Bookmark { .. } => {}
+                        Packet::Keyframe { .. } => {}
+                        Packet::CompressedBlob { .. } => unreachable!("compressed blob")
+                    }
+                    Err(_) => break
+                }
+            }
+            self.replay_player = Some(player);
+        }
+
         self.update_input();
         self.flush_writes();
     }
@@ -186,6 +222,10 @@ impl SuperShuckieCore {
     }
 
     fn flush_writes(&mut self) {
+        if self.replay_player.is_some() {
+            return
+        }
+
         if self.mid_frame {
             return
         }
@@ -351,6 +391,10 @@ impl SuperShuckieCore {
     }
 
     fn update_input(&mut self) {
+        if self.replay_player.is_some() {
+            return
+        }
+
         if self.mid_frame {
             return
         }
@@ -393,6 +437,8 @@ impl SuperShuckieCore {
         self.frames_since_last_keyframe += time.frames;
         self.total_frames = self.total_frames.wrapping_add(time.frames);
 
+        self.replay_frames_delay = self.replay_frames_delay.saturating_sub(time.frames);
+
         if let Some(rapid_fire) = self.rapid_fire_input.as_mut() {
             rapid_fire.current_frame = rapid_fire.current_frame.wrapping_add(1) % rapid_fire.total_frames;
         }
@@ -434,7 +480,7 @@ impl SuperShuckieCore {
     }
 
     /// Attach a replay file player to the core.
-    pub fn attach_replay_player(&mut self, player: ReplayFilePlayer, allow_mismatched: bool) -> Result<(), ReplayPlayerAttachError> {
+    pub fn attach_replay_player(&mut self, mut player: ReplayFilePlayer, allow_mismatched: bool) -> Result<(), ReplayPlayerAttachError> {
         let metadata = player.get_replay_metadata();
         let core_console_type = self.core.replay_console_type();
 
@@ -468,8 +514,64 @@ impl SuperShuckieCore {
             }
         }
 
+        if let Err(e) = player.go_to_keyframe(0) {
+            todo!("can't go to 0th keyframe (and can't handle this error TODO): {e:?}")
+        }
+
+        self.current_input = Input::new();
+        self.next_input = None;
         self.replay_player = Some(player);
+
+        self.go_to_replay_frame(0);
+
         Ok(())
+    }
+
+    /// Detach the current replay player.
+    pub fn detach_replay_player(&mut self) {
+        self.replay_player = None;
+    }
+
+    /// Seek to the given frame (if playing back).
+    pub fn go_to_replay_frame(&mut self, frame: UnsignedInteger) {
+        self.go_to_replay_frame_inner(frame, frame);
+    }
+
+    fn go_to_replay_frame_inner(&mut self, frame: UnsignedInteger, desired: UnsignedInteger) {
+        let Some(p) = self.replay_player.as_mut() else {
+            return
+        };
+
+        let desired = desired.min(p.get_total_frames().saturating_sub(1));
+        if desired >= p.get_total_frames() {
+            return
+        }
+
+        if let Err(e) = p.go_to_keyframe(frame) {
+            match e {
+                ReplaySeekError::ReadError { error } => todo!("can't go to {frame}: {error:?} (can't handle this error TODO)"),
+                ReplaySeekError::NoSuchKeyframe { best, .. } => {
+                    return self.go_to_replay_frame_inner(best, desired);
+                }
+            }
+        }
+
+        let Ok(Some(Packet::Keyframe { metadata, state })) = p.next_packet() else {
+            todo!("replay file is broken (no keyframe found at frame {frame}!! and error handling not yet implemented)")
+        };
+
+        let speed = metadata.speed;
+
+        self.core.load_save_state(state.as_slice()).expect("replay file is broken (can't load save state) and error handling not yet implemented!");
+        self.core.set_input_encoded(metadata.input.as_slice());
+
+        self.total_frames = metadata.elapsed_frames;
+        self.ticks_over_256 = metadata.elapsed_emulator_ticks_over_256;
+        self.set_speed(speed);
+
+        while self.total_frames <= desired {
+            self.run_unlocked();
+        }
     }
 }
 

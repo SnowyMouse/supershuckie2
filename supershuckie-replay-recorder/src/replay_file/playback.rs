@@ -325,7 +325,11 @@ impl ReplayFilePlayer {
             }
         }
 
-        unreachable!("failed to find keyframe somehow even though we somehow had it in self.keyframes...")
+        if self.next_compressed_packet_index.is_none() {
+            unreachable!("failed to find keyframe somehow even though we somehow had it in self.keyframes...");
+        }
+
+        Ok(())
     }
 
     fn decompress_immediately(&mut self, blob_packet_index: usize) -> Result<(), ReplayFileReadError> {
