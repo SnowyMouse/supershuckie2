@@ -28,7 +28,7 @@ use alloc::sync::Arc;
 use alloc::collections::BTreeMap;
 use alloc::vec;
 use crate::replay_file::{ReplayFileMetadata, ReplayHeaderBytes, ReplayHeaderRaw};
-use crate::{BookmarkMetadata, KeyframeMetadata, Packet, PacketIO, PacketReadError, UnsignedInteger};
+use crate::{BookmarkMetadata, KeyframeMetadata, Packet, PacketIO, PacketReadError, TimestampMillis, UnsignedInteger};
 use crate::util::{decompress_data, launder_reference};
 
 type KeyframeMap<'a> = BTreeMap<UnsignedInteger, Vec<&'a KeyframeMetadata>>;
@@ -43,7 +43,7 @@ pub struct ReplayFilePlayer {
     bookmarks: BookmarkMap<'static>,
 
     total_frame_count: UnsignedInteger,
-    total_ticks_over_256: UnsignedInteger,
+    total_millis: TimestampMillis,
 
     compressed_blobs_decompressing: BTreeMap<usize, Option<Arc<Mutex<PacketDecompressionStatus>>>>,
     compressed_blobs_finished: BTreeMap<usize, Option<Arc<Vec<Packet>>>>,
@@ -126,7 +126,7 @@ impl ReplayFilePlayer {
         let mut all_bookmarks = BookmarkMap::new();
 
         let mut total_frame_count: UnsignedInteger = 0;
-        let mut total_ticks_over_256: UnsignedInteger = 0;
+        let mut total_millis: UnsignedInteger = 0;
 
         macro_rules! add_keyframe {
             ($metadata:expr) => {{
@@ -157,7 +157,7 @@ impl ReplayFilePlayer {
                     keyframes,
                     bookmarks,
                     uncompressed_size,
-                    elapsed_emulator_ticks_over_256_end,
+                    timestamp_end,
                     ..
                 } => {
                     // Vec works with up to isize maximum elements
@@ -179,16 +179,18 @@ impl ReplayFilePlayer {
                         add_bookmark!(i)
                     }
 
-                    total_ticks_over_256 = *elapsed_emulator_ticks_over_256_end;
+                    total_millis = *timestamp_end;
                 },
                 Packet::Keyframe { metadata, .. } => {
                     add_keyframe!(metadata);
                 },
-                Packet::RunFrames { frames } => {
-                    total_frame_count += *frames;
+                Packet::NextFrame { timestamp_delta } => {
+                    total_frame_count += 1;
+                    total_millis += timestamp_delta;
                 }
                 Packet::Bookmark { metadata } => {
                     add_bookmark!(metadata);
+                    total_millis = metadata.elapsed_millis;
                 },
                 _ => {}
             }
@@ -210,7 +212,7 @@ impl ReplayFilePlayer {
             compressed_blobs_decompressing: compressed_blobs,
             compressed_blobs_finished,
             total_frame_count,
-            total_ticks_over_256,
+            total_millis,
 
             #[cfg(feature = "std")]
             threading: false
@@ -224,11 +226,9 @@ impl ReplayFilePlayer {
         self.total_frame_count
     }
 
-    /// Get the total ticks over 256.
-    ///
-    /// Note that if the replay was not properly finalized, this number may not be accurate.
-    pub fn get_total_ticks_over_256(&self) -> UnsignedInteger {
-        self.total_ticks_over_256
+    /// Get the total milliseconds of the replay.
+    pub fn get_total_milliseconds(&self) -> UnsignedInteger {
+        self.total_millis
     }
 
     /// Enable decompression on a separate thread.

@@ -25,7 +25,6 @@ static NULL_EMULATOR_SCREEN: Lazy<ScreenData> = Lazy::new(|| {
 impl EmulatorCore for NullEmulatorCore {
     fn run(&mut self) -> RunTime {
         RunTime {
-            ticks: 1,
             frames: 1
         }
     }
@@ -40,10 +39,6 @@ impl EmulatorCore for NullEmulatorCore {
 
     fn write_ram(&mut self, address: u32, from: &[u8]) -> Result<(), &'static str> {
         Err("unsupported")
-    }
-
-    fn ticks_per_second(&self) -> f64 {
-        1.0 / 60.0
     }
 
     fn set_speed(&mut self, speed: f64) {

@@ -8,6 +8,7 @@ pub use game_boy_color::*;
 pub use null::*;
 
 use alloc::vec::Vec;
+use std::num::NonZeroU64;
 use supershuckie_replay_recorder::ByteVec;
 use supershuckie_replay_recorder::replay_file::{ReplayConsoleType, ReplayHeaderBlake3Hash, ReplayPatchFormat};
 use supershuckie_replay_recorder::replay_file::record::{ReplayFileRecorderSettings, ReplayFileSink};
@@ -29,11 +30,6 @@ pub trait EmulatorCore: Send + 'static {
     ///
     /// Note: The way `address` is interpreted is core-specific.
     fn write_ram(&mut self, address: u32, from: &[u8]) -> Result<(), &'static str>;
-
-    /// Return the number of ticks per second.
-    ///
-    /// Note: This is not allowed to change.
-    fn ticks_per_second(&self) -> f64;
 
     /// Set the game speed multiplier.
     fn set_speed(&mut self, speed: f64);
@@ -90,9 +86,6 @@ pub trait EmulatorCore: Send + 'static {
 /// Amount of time passed when running the emulator core.
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct RunTime {
-    /// Emulator ticks passed.
-    pub ticks: u64,
-
     /// Frames passed.
     pub frames: u64
 }
@@ -309,8 +302,8 @@ pub struct PartialReplayRecordMetadata<
 
     /// Number of frames between keyframes.
     ///
-    /// Lower number will improve seeking performance but increase file and memory size.
-    pub frames_per_keyframe: u64,
+    /// Lower numbers will improve seeking performance but increase file and memory size.
+    pub frames_per_keyframe: NonZeroU64,
 
     /// Final file to write to
     pub final_file: FS,

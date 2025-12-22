@@ -108,9 +108,9 @@ fn pokeabyte_protocol_region_from_address(address: u32) -> Option<(DirectAccessR
 
 impl EmulatorCore for GameBoyColor {
     fn run(&mut self) -> RunTime {
-        let ticks = self.core.run() as u64;
+        self.core.run();
         let frames = self.callback_data.run_frames.swap(0, Ordering::Relaxed) as u64;
-        RunTime { ticks, frames }
+        RunTime { frames }
     }
 
     fn run_unlocked(&mut self) -> RunTime {
@@ -149,11 +149,6 @@ impl EmulatorCore for GameBoyColor {
         };
         data.copy_from_slice(from);
         Ok(())
-    }
-
-    #[inline]
-    fn ticks_per_second(&self) -> f64 {
-        (8 * 1024 * 1024) as f64
     }
 
     #[inline]

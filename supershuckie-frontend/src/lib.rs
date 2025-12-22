@@ -217,6 +217,7 @@ impl SuperShuckieFrontend {
     #[inline]
     pub fn stop_replay_playback(&mut self) {
         self.core.detach_replay_player();
+        self.reset_speed();
     }
 
     /// Get the replay playback stats if currently playing back.
@@ -566,15 +567,15 @@ impl SuperShuckieFrontend {
         self.update_video_mode();
     }
 
-    /// Set the video scale.
-    pub fn set_speed(&mut self, mut base: f64, mut turbo: f64) {
+    /// Set the game speed.
+    pub fn set_speed_settings(&mut self, mut base: f64, mut turbo: f64) {
         base = Speed::from_multiplier_float(base).into_multiplier_float();
         turbo = Speed::from_multiplier_float(turbo).into_multiplier_float();
 
         self.settings.emulation.base_speed_multiplier = base;
         self.settings.emulation.turbo_speed_multiplier = turbo;
 
-        self.apply_turbo(0.0);
+        self.reset_speed();
     }
 
     /// Set a custom setting.
@@ -710,7 +711,7 @@ impl SuperShuckieFrontend {
             rom_filename: current_rom_name.to_string(),
 
             settings: ReplayFileRecorderSettings {
-                minimum_uncompressed_bytes_per_blob: self.settings.replay_settings.max_blob_size,
+                minimum_uncompressed_bytes_per_blob: self.settings.replay_settings.max_blob_size.get(),
                 compression_level: self.settings.replay_settings.zstd_compression_level
             },
 
@@ -719,7 +720,7 @@ impl SuperShuckieFrontend {
             patch_target_checksum: ReplayHeaderBlake3Hash::default(),
             patch_data: ByteVec::default(),
 
-            frames_per_keyframe: 60,
+            frames_per_keyframe: self.settings.replay_settings.frames_per_keyframe,
 
             final_file,
             temp_file,
@@ -782,6 +783,11 @@ impl SuperShuckieFrontend {
         if !self.settings.emulation.paused {
             self.core.start();
         }
+    }
+
+    #[inline]
+    fn reset_speed(&mut self) {
+        self.apply_turbo(0.0);
     }
 
     fn apply_turbo(&mut self, turbo: f64) {

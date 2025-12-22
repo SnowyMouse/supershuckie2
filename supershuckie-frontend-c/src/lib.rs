@@ -415,7 +415,7 @@ pub extern "C" fn supershuckie_frontend_set_speed_settings(
     base: f64,
     turbo: f64
 ) {
-    frontend.set_speed(base, turbo);
+    frontend.set_speed_settings(base, turbo);
 }
 
 #[unsafe(no_mangle)]

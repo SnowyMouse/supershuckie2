@@ -1,7 +1,7 @@
 use core::cmp::Ordering;
 
 use crate::packet::{BookmarkMetadata, ByteVec, KeyframeMetadata, Packet, Speed, UnsignedInteger};
-use crate::InputBuffer;
+use crate::{InputBuffer, TimestampMillis};
 use alloc::borrow::{Cow, ToOwned};
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -235,18 +235,11 @@ fn static_packet_write_array_references<'a, 'b, const LEN: usize>(from: TinyVec<
 #[derive(Copy, Clone, PartialEq, Debug, TryFromPrimitive)]
 #[repr(u8)]
 pub enum PacketDiscriminator {
-    /// Run 0 frames.
-    /// 
-    /// This is basically a no-op.
+    /// Do nothing.
     NoOp = 0x00,
 
-    /// Run N number of frames, where N = the binary value of the discriminator.
-    /// 
-    /// This applies for all discriminators between `0x01..=0x7F`
-    RunFrameN = 0x01,
-
-    /// Run a variable number of frames.
-    RunFrameVar = 0x80,
+    /// Run for one frame.
+    NextFrame = 0x80,
 
     /// 8-bit input
     ChangeInput8 = 0x81,
@@ -349,7 +342,7 @@ impl Packet {
             Packet::NoOp => PacketDiscriminator::NoOp as u8,
             Packet::ResetConsole => PacketDiscriminator::ResetConsole as u8,
             Packet::LoadSaveState { .. } => PacketDiscriminator::LoadSaveState as u8,
-            Packet::RunFrames { frames } => if *frames < PacketDiscriminator::RunFrameVar as UnsignedInteger { *frames as u8 } else { PacketDiscriminator::RunFrameVar as u8 },
+            Packet::NextFrame { .. } => PacketDiscriminator::NextFrame as u8,
             Packet::WriteMemory { data, .. } => match data.len() {
                 1 => PacketDiscriminator::WriteMemory8 as u8,
                 2 => PacketDiscriminator::WriteMemory16 as u8,
@@ -379,8 +372,8 @@ impl PacketIO<'_> for Packet {
         match self {
             Packet::NoOp | Packet::ResetConsole => (),
             
-            Packet::RunFrames { frames } => if *frames >= (PacketDiscriminator::RunFrameVar as UnsignedInteger) {
-                commands.extend(frames.write_packet_instructions());
+            Packet::NextFrame { timestamp_delta } => {
+                commands.extend(timestamp_delta.write_packet_instructions());
             },
             
             Packet::ChangeInput { data } => {
@@ -411,8 +404,8 @@ impl PacketIO<'_> for Packet {
                 bookmarks,
                 compressed_data,
                 uncompressed_size,
-                elapsed_emulator_ticks_over_256_start,
-                elapsed_emulator_ticks_over_256_end,
+                timestamp_start,
+                timestamp_end,
                 elapsed_frames_start,
                 elapsed_frames_end
             } => {
@@ -420,8 +413,8 @@ impl PacketIO<'_> for Packet {
                 commands.extend(bookmarks.write_packet_instructions());
                 commands.extend(compressed_data.write_packet_instructions());
                 commands.extend(uncompressed_size.write_packet_instructions());
-                commands.extend(elapsed_emulator_ticks_over_256_start.write_packet_instructions());
-                commands.extend(elapsed_emulator_ticks_over_256_end.write_packet_instructions());
+                commands.extend(timestamp_start.write_packet_instructions());
+                commands.extend(timestamp_end.write_packet_instructions());
                 commands.extend(elapsed_frames_start.write_packet_instructions());
                 commands.extend(elapsed_frames_end.write_packet_instructions());
             }
@@ -455,9 +448,6 @@ impl PacketIO<'_> for Packet {
         else if discriminator_byte == PacketDiscriminator::ResetConsole {
             return Ok(Packet::ResetConsole)
         }
-        else if discriminator_byte < PacketDiscriminator::RunFrameVar {
-            return Ok(Packet::RunFrames { frames: discriminator_byte as UnsignedInteger })
-        }
 
         let Ok(t) = PacketDiscriminator::try_from_primitive(discriminator_byte) else {
             return Err(PacketReadError::ParseFail { explanation: Cow::Owned(alloc::format!("Unknown packet discriminator 0x{discriminator_byte:08X}")) })
@@ -487,8 +477,8 @@ impl PacketIO<'_> for Packet {
         }
 
         match t {
-            PacketDiscriminator::NoOp | PacketDiscriminator::ResetConsole | PacketDiscriminator::RunFrameN => unreachable!("{t:?} should have already been handled"),
-            PacketDiscriminator::RunFrameVar => Ok(Packet::RunFrames { frames: UnsignedInteger::read_all(from)? }),
+            PacketDiscriminator::NoOp | PacketDiscriminator::ResetConsole => unreachable!("{t:?} should have already been handled"),
+            PacketDiscriminator::NextFrame => Ok(Packet::NextFrame { timestamp_delta: TimestampMillis::read_all(from)? }),
             PacketDiscriminator::LoadSaveState => Ok(Packet::LoadSaveState { state: ByteVec::read_all(from)? }),
             PacketDiscriminator::ChangeInput8 => change_input!(u8),
             PacketDiscriminator::ChangeInput16 => change_input!(u16),
@@ -506,8 +496,8 @@ impl PacketIO<'_> for Packet {
                 bookmarks: Vec::read_all(from)?,
                 compressed_data: ByteVec::read_all(from)?,
                 uncompressed_size: UnsignedInteger::read_all(from)?,
-                elapsed_emulator_ticks_over_256_start: UnsignedInteger::read_all(from)?,
-                elapsed_emulator_ticks_over_256_end: UnsignedInteger::read_all(from)?,
+                timestamp_start: UnsignedInteger::read_all(from)?,
+                timestamp_end: UnsignedInteger::read_all(from)?,
                 elapsed_frames_start: UnsignedInteger::read_all(from)?,
                 elapsed_frames_end: UnsignedInteger::read_all(from)?
             }),
@@ -520,7 +510,7 @@ impl PacketIO<'_> for KeyframeMetadata {
         write_commands.extend(self.input.write_packet_instructions());
         write_commands.extend(self.speed.write_packet_instructions());
         write_commands.extend(self.elapsed_frames.write_packet_instructions());
-        write_commands.extend(self.elapsed_emulator_ticks_over_256.write_packet_instructions());
+        write_commands.extend(self.elapsed_millis.write_packet_instructions());
         write_commands
     }
 
@@ -529,7 +519,7 @@ impl PacketIO<'_> for KeyframeMetadata {
             input: InputBuffer::read_all(from)?,
             speed: Speed::read_all(from)?,
             elapsed_frames: UnsignedInteger::read_all(from)?,
-            elapsed_emulator_ticks_over_256: UnsignedInteger::read_all(from)?,
+            elapsed_millis: UnsignedInteger::read_all(from)?,
         })
     }
 }
@@ -558,6 +548,7 @@ impl PacketIO<'_> for BookmarkMetadata {
         let mut instructions = PacketInstructionsVec::new();
         instructions.extend(self.name.write_packet_instructions());
         instructions.extend(self.elapsed_frames.write_packet_instructions());
+        instructions.extend(self.elapsed_millis.write_packet_instructions());
         instructions
     }
 
@@ -565,6 +556,7 @@ impl PacketIO<'_> for BookmarkMetadata {
         Ok(Self {
             name: String::read_all(from)?,
             elapsed_frames: UnsignedInteger::read_all(from)?,
+            elapsed_millis: TimestampMillis::read_all(from)?,
         })
     }
 }

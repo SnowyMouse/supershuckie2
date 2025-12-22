@@ -4,7 +4,7 @@ use std::fs;
 use std::fs::File;
 use std::hint::unreachable_unchecked;
 use std::io::{Read, Seek, SeekFrom};
-use std::num::{NonZeroU8, NonZeroUsize};
+use std::num::{NonZeroU64, NonZeroU8, NonZeroUsize};
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 use supershuckie_core::emulator::Input;
@@ -76,24 +76,29 @@ impl Settings {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct ReplaySettings {
     #[serde(default = "ReplaySettings::DEFAULT_MAX_BLOB_SIZE")]
-    pub max_blob_size: usize,
+    pub max_blob_size: NonZeroUsize,
 
     #[serde(default = "ReplaySettings::DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL")]
-    pub zstd_compression_level: i32
+    pub zstd_compression_level: i32,
+
+    #[serde(default = "ReplaySettings::DEFAULT_FRAMES_PER_KEYFRAME")]
+    pub frames_per_keyframe: NonZeroU64
 }
 
 impl Default for ReplaySettings {
     fn default() -> Self {
         Self {
             max_blob_size: Self::DEFAULT_MAX_BLOB_SIZE(),
-            zstd_compression_level: Self::DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL()
+            zstd_compression_level: Self::DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL(),
+            frames_per_keyframe: Self::DEFAULT_FRAMES_PER_KEYFRAME()
         }
     }
 }
 
 impl ReplaySettings {
-    const DEFAULT_MAX_BLOB_SIZE: fn() -> usize = || ReplayFileRecorderSettings::default().minimum_uncompressed_bytes_per_blob;
+    const DEFAULT_MAX_BLOB_SIZE: fn() -> NonZeroUsize = || unsafe { NonZeroUsize::new_unchecked(ReplayFileRecorderSettings::default().minimum_uncompressed_bytes_per_blob) };
     const DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL: fn() -> i32 = || ReplayFileRecorderSettings::default().compression_level;
+    const DEFAULT_FRAMES_PER_KEYFRAME: fn() -> NonZeroU64 = || unsafe { NonZeroU64::new_unchecked(60) };
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

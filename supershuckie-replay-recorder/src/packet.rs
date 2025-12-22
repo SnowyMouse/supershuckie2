@@ -11,6 +11,8 @@ pub type InputBuffer = TinyVec<[u8; 16]>;
 #[allow(missing_docs)]
 pub type UnsignedInteger = u64;
 #[allow(missing_docs)]
+pub type TimestampMillis = UnsignedInteger;
+#[allow(missing_docs)]
 pub type ByteVec = TinyVec<[u8; 16]>;
 
 /// Describes an individual packet.
@@ -19,9 +21,11 @@ pub enum Packet {
     /// Do nothing
     NoOp,
 
-    /// Run emulator for `frames` frames
+    /// Run emulator for one frame.
+    /// 
+    /// `timestamp_delta` is the time passed since the last frame.
     #[allow(missing_docs)]
-    RunFrames { frames: UnsignedInteger },
+    NextFrame { timestamp_delta: TimestampMillis },
 
     /// Write RAM to the given address
     /// 
@@ -62,8 +66,8 @@ pub enum Packet {
         bookmarks: Vec<BookmarkMetadata>,
         compressed_data: ByteVec,
         uncompressed_size: UnsignedInteger,
-        elapsed_emulator_ticks_over_256_start: UnsignedInteger,
-        elapsed_emulator_ticks_over_256_end: UnsignedInteger,
+        timestamp_start: TimestampMillis,
+        timestamp_end: TimestampMillis,
         elapsed_frames_start: UnsignedInteger,
         elapsed_frames_end: UnsignedInteger
     }
@@ -111,10 +115,8 @@ pub struct KeyframeMetadata {
     /// Number of elapsed frames
     pub elapsed_frames: UnsignedInteger,
 
-    /// Number of "effective" emulator ticks passed multiplied by 256.
-    /// 
-    /// This may be scaled by the current speed.
-    pub elapsed_emulator_ticks_over_256: UnsignedInteger
+    /// Total elapsed milliseconds
+    pub elapsed_millis: TimestampMillis
 }
 
 /// Payload for bookmarks
@@ -124,5 +126,8 @@ pub struct BookmarkMetadata {
     pub name: String,
 
     /// Number of elapsed frames
-    pub elapsed_frames: UnsignedInteger
+    pub elapsed_frames: UnsignedInteger,
+
+    /// Total elapsed milliseconds
+    pub elapsed_millis: TimestampMillis
 }

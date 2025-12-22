@@ -1,5 +1,5 @@
 use crate::emulator::{EmulatorCore, Input, PartialReplayRecordMetadata, ScreenData};
-use crate::{ReplayPlayerAttachError, Speed};
+use crate::{std_timestamp_provider, ReplayPlayerAttachError, Speed};
 use crate::{SuperShuckieCore, SuperShuckieRapidFire};
 use std::borrow::ToOwned;
 use std::boxed::Box;
@@ -51,7 +51,7 @@ impl ThreadedSuperShuckieCore {
                     screens_queued: emulator_core.get_screens().to_vec(),
                     screen_ready_for_copy: false,
                     is_running: false,
-                    core: SuperShuckieCore::new(emulator_core),
+                    core: SuperShuckieCore::new(emulator_core, std_timestamp_provider()),
                     pokeabyte_integration: None,
                     receiver,
                     sender_close,
@@ -209,7 +209,7 @@ impl ThreadedSuperShuckieCore {
     pub fn attach_replay_player(&mut self, mut player: ReplayFilePlayer, allow_mismatch: bool) -> Result<(), ReplayPlayerAttachError> {
         player.enable_threading();
 
-        let total_ticks = player.get_total_ticks_over_256();
+        let total_ticks = player.get_total_milliseconds();
         let total_frames = player.get_total_frames();
 
         let (sender, receiver) = channel();
@@ -303,7 +303,7 @@ impl ThreadedSuperShuckieCoreThread {
             self.refresh_screen_data(false);
             self.update_queued_screens();
             self.handle_pokeabyte_integration();
-            self.replay_milliseconds.store(self.core.get_recording_milliseconds(), Ordering::Relaxed);
+            self.replay_milliseconds.store(self.core.get_recording_milliseconds() as u32, Ordering::Relaxed);
 
             if self.is_running {
                 self.core.run();

@@ -17,7 +17,7 @@ use core::num::NonZeroU64;
 use supershuckie_replay_recorder::replay_file::playback::{ReplayFilePlayer, ReplaySeekError};
 use supershuckie_replay_recorder::replay_file::record::{NonBlockingReplayFileRecorder, ReplayFileRecorder, ReplayFileRecorderFns, ReplayFileSink, ReplayFileWriteError};
 use supershuckie_replay_recorder::replay_file::{blake3_hash_to_ascii, ReplayFileMetadata, ReplayHeaderBlake3Hash, ReplayPatchFormat};
-use supershuckie_replay_recorder::{ByteVec, Packet, UnsignedInteger};
+use supershuckie_replay_recorder::{ByteVec, Packet, TimestampMillis, UnsignedInteger};
 
 pub mod emulator;
 
@@ -29,12 +29,11 @@ mod thread;
 #[cfg(feature = "std")]
 pub use thread::*;
 
-// TODO: We should also have a way to playback replays, immediately ceasing once an input is given.
-
 /// Wrapper for [`EmulatorCore`] that provides useful desktop emulator functionality.
 pub struct SuperShuckieCore {
     core: Box<dyn EmulatorCore>,
     replay_file_recorder: Option<Box<dyn ReplayFileRecorderFns>>,
+    timestamp_provider: Box<dyn MonotonicTimestampProvider>,
 
     replay_player: Option<ReplayFilePlayer>,
 
@@ -66,12 +65,9 @@ pub struct SuperShuckieCore {
     replay_stalled: bool,
 
     input_scratch_buffer: Vec<u8>,
-    total_milliseconds: u32,
-
+    starting_milliseconds: TimestampMillis,
+    total_milliseconds: TimestampMillis,
     game_speed: Speed,
-    ticks_per_second: f64,
-
-    ticks_over_256: u64,
 
     frames_since_last_keyframe: u64,
     frames_per_keyframe: u64,
@@ -120,7 +116,7 @@ impl Default for SuperShuckieRapidFire {
 
 impl SuperShuckieCore {
     /// Wrap `emulator_core`.
-    pub fn new(emulator_core: Box<dyn EmulatorCore>) -> Self {
+    pub fn new(emulator_core: Box<dyn EmulatorCore>, mut timestamp_provider: Box<dyn MonotonicTimestampProvider>) -> Self {
         Self {
             replay_file_recorder: None,
             base_input: Input::default(),
@@ -132,9 +128,8 @@ impl SuperShuckieCore {
             mid_frame: false,
             input_scratch_buffer: Vec::new(),
             total_milliseconds: 0,
+            starting_milliseconds: timestamp_provider.get_timestamp(),
             game_speed: Default::default(),
-            ticks_per_second: emulator_core.ticks_per_second(),
-            ticks_over_256: 0,
             frames_since_last_keyframe: 0,
             frames_per_keyframe: 0,
             total_frames: 0,
@@ -142,6 +137,7 @@ impl SuperShuckieCore {
             replay_frames_delay: 0u64,
             replay_stalled: false,
             core: emulator_core,
+            timestamp_provider
         }
     }
 
@@ -220,8 +216,9 @@ impl SuperShuckieCore {
                 Ok(Some(n)) => {
                     match n {
                         Packet::NoOp => {}
-                        Packet::RunFrames { frames } => {
-                            self.replay_frames_delay = *frames;
+                        Packet::NextFrame { timestamp_delta } => {
+                            self.replay_frames_delay = 1;
+                            self.total_milliseconds = self.total_milliseconds.wrapping_add(*timestamp_delta);
                             break;
                         }
                         Packet::WriteMemory { address, data } => {
@@ -386,9 +383,9 @@ impl SuperShuckieCore {
         self.core.encode_input(initial_input, &mut initial_input_data);
         self.core.set_input_encoded(&initial_input_data);
 
-        self.ticks_over_256 = 0;
         self.total_frames = 0;
         self.total_milliseconds = 0;
+        self.starting_milliseconds = self.timestamp_provider.get_timestamp();
 
         let recorder = NonBlockingReplayFileRecorder::new(ReplayFileRecorder::new_with_metadata(
             ReplayFileMetadata {
@@ -404,7 +401,7 @@ impl SuperShuckieCore {
 
             ByteVec::new(),
             partial_replay_record_metadata.settings,
-            self.ticks_over_256,
+            self.total_milliseconds,
 
             ByteVec::Heap(initial_input_data),
             initial_speed,
@@ -413,7 +410,7 @@ impl SuperShuckieCore {
             partial_replay_record_metadata.temp_file
         )?);
 
-        self.frames_per_keyframe = partial_replay_record_metadata.frames_per_keyframe;
+        self.frames_per_keyframe = partial_replay_record_metadata.frames_per_keyframe.get();
         self.replay_file_recorder = Some(Box::new(recorder));
 
         Ok(())
@@ -422,7 +419,7 @@ impl SuperShuckieCore {
     /// Get number of milliseconds
     ///
     /// This will reset to 0 whenever a replay is started.
-    pub fn get_recording_milliseconds(&self) -> u32 {
+    pub fn get_recording_milliseconds(&self) -> TimestampMillis {
         self.total_milliseconds
     }
 
@@ -494,35 +491,25 @@ impl SuperShuckieCore {
     }
 
     fn do_frame_timekeeping(&mut self, time: &RunTime) {
-        let ticks_passed = time.ticks * 256 * 256 / (self.game_speed.speed_over_256.get() as u64);
-        self.ticks_over_256 = self.ticks_over_256.saturating_add(ticks_passed);
         self.frames_since_last_keyframe += time.frames;
         self.total_frames = self.total_frames.wrapping_add(time.frames);
-
         self.replay_frames_delay = self.replay_frames_delay.saturating_sub(time.frames);
 
         if let Some(rapid_fire) = self.rapid_fire_input.as_mut() {
             rapid_fire.current_frame = rapid_fire.current_frame.wrapping_add(1) % rapid_fire.total_frames;
         }
 
-        // We want to take ticks_over_256 and turn it into milliseconds
-        //
-        // To do that, we can get ticks_over_256 and divide by 256 to get the actual tick count.
-        // Then divide by ticks per second and multiply the result by 1000.
-        //
-        // To reduce precision loss, we can multiply ticks_over_256 by 1000 and then divide the
-        // result by 256.
-        //
-        // And to minimize the size of numbers, we can simplify 1000/256 to 125/32.
-        let ms = (((125 * self.ticks_over_256) as f64) / self.ticks_per_second) as u64 / 32;
-        self.total_milliseconds = ms.min(u32::MAX as u64) as u32;
+        if self.replay_player.is_none() {
+            let ms = self.timestamp_provider.get_timestamp() - self.starting_milliseconds;
+            self.total_milliseconds = ms;
 
-        self.with_recorder(|f| {
-            // Add frames...
-            for _ in 0..time.frames {
-                f.next_frame()
-            }
-        });
+            self.with_recorder(|f| {
+                // Add frames...
+                for _ in 0..time.frames {
+                    let _ = f.next_frame(ms);
+                }
+            });
+        }
 
         self.mid_frame = time.frames == 0;
     }
@@ -532,12 +519,11 @@ impl SuperShuckieCore {
             return
         }
 
-        let elapsed_ticks = self.ticks_over_256;
         self.frames_since_last_keyframe = 0;
-
+        let ms = self.total_milliseconds;
         let save_state = Some(ByteVec::Heap(self.core.create_save_state()));
         self.with_recorder(|f| {
-            let _ = f.insert_keyframe(save_state.unwrap(), elapsed_ticks);
+            let _ = f.insert_keyframe(save_state.unwrap(), ms);
         });
     }
 
@@ -584,6 +570,8 @@ impl SuperShuckieCore {
         self.next_input = None;
         self.replay_player = Some(player);
         self.replay_stalled = false;
+        self.total_milliseconds = 0;
+        self.starting_milliseconds = self.timestamp_provider.get_timestamp();
 
         self.go_to_replay_frame(0);
 
@@ -628,11 +616,12 @@ impl SuperShuckieCore {
 
         self.core.load_save_state(state.as_slice()).expect("replay file is broken (can't load save state) and error handling not yet implemented!");
         self.core.set_input_encoded(metadata.input.as_slice());
-        self.mid_frame = false;
 
+        self.mid_frame = false;
         self.total_frames = metadata.elapsed_frames;
         self.replay_stalled = false;
-        self.ticks_over_256 = metadata.elapsed_emulator_ticks_over_256;
+        self.total_milliseconds = metadata.elapsed_millis;
+
         self.set_speed(speed);
 
         while self.total_frames <= desired && !self.replay_stalled {
@@ -698,6 +687,43 @@ impl Display for ReplayPlayerMetadataMismatchKind {
                     replay, loaded
                 ))
             }
+        }
+    }
+}
+
+/// Function that monotonically produces a timestamp.
+///
+/// The timestamp must never go backwards, although it does not necessarily always have to go
+/// forwards, either.
+pub trait MonotonicTimestampProvider {
+    /// Get the timestamp.
+    fn get_timestamp(&mut self) -> TimestampMillis;
+}
+
+#[cfg(feature = "std")]
+pub fn std_timestamp_provider() -> Box<dyn MonotonicTimestampProvider> {
+    Box::new(std_timestamp_provider::StdTimestampProvider::new())
+}
+
+#[cfg(feature = "std")]
+mod std_timestamp_provider {
+    use std::time::Instant;
+    use supershuckie_replay_recorder::TimestampMillis;
+    use crate::MonotonicTimestampProvider;
+
+    pub struct StdTimestampProvider {
+        reference_time: Instant
+    }
+
+    impl StdTimestampProvider {
+        pub fn new() -> Self {
+            Self { reference_time: Instant::now() }
+        }
+    }
+
+    impl MonotonicTimestampProvider for StdTimestampProvider {
+        fn get_timestamp(&mut self) -> TimestampMillis {
+            (Instant::now() - self.reference_time).as_millis() as TimestampMillis
         }
     }
 }

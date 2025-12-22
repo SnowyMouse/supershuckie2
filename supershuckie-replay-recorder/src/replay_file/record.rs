@@ -3,7 +3,7 @@
 //! See [`ReplayFileRecorder`] and [`NonBlockingReplayFileRecorder`].
 
 use crate::replay_file::ReplayFileMetadata;
-use crate::{BookmarkMetadata, ByteVec, InputBuffer, KeyframeMetadata, Packet, PacketIO, PacketWriteCommand, Speed, UnsignedInteger};
+use crate::{BookmarkMetadata, ByteVec, InputBuffer, KeyframeMetadata, Packet, PacketIO, PacketWriteCommand, Speed, TimestampMillis, UnsignedInteger};
 use alloc::string::String;
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
@@ -41,9 +41,8 @@ pub struct ReplayFileRecorder<Final: ReplayFileSink, Temp: ReplayFileSink> {
     current_blob_bookmarks: Vec<BookmarkMetadata>,
     current_blob_offset: u64,
 
-    frames_since_last_non_frames_packet: UnsignedInteger,
     elapsed_frames: UnsignedInteger,
-    elapsed_ticks_over_256: UnsignedInteger,
+    elapsed_millis: TimestampMillis,
     last_keyframe_frames: UnsignedInteger,
 
     current_speed: Speed,
@@ -87,7 +86,7 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
         replay_file_metadata: ReplayFileMetadata,
         patch_data: ByteVec,
         mut settings: ReplayFileRecorderSettings,
-        starting_emulator_ticks_over_256: UnsignedInteger,
+        starting_timestamp: UnsignedInteger,
         starting_input: InputBuffer,
         starting_speed: Speed,
         initial_keyframe_state: ByteVec,
@@ -117,7 +116,7 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
         let mut recorder = ReplayFileRecorder {
             settings,
             elapsed_frames: 0,
-            elapsed_ticks_over_256: 0,
+            elapsed_millis: 0,
             last_keyframe_frames: 0,
             current_speed: starting_speed,
             current_input: starting_input,
@@ -125,7 +124,6 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
             current_blob_keyframes: Vec::new(),
             current_blob_bookmarks: Vec::new(),
             current_blob_offset: u64::try_from(current_blob_offset).expect("failed to read"),
-            frames_since_last_non_frames_packet: 0,
             poisoned: false,
             sink: Some(SinkTuple {
                 final_sink, temp_sink
@@ -134,7 +132,7 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
 
         recorder.insert_keyframe(
             initial_keyframe_state,
-            starting_emulator_ticks_over_256
+            starting_timestamp
         )?;
 
         Ok(recorder)
@@ -176,9 +174,15 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
     }
 
     /// Advance a new frame.
-    pub fn next_frame(&mut self) {
-        self.frames_since_last_non_frames_packet += 1;
+    pub fn next_frame(&mut self, timestamp: TimestampMillis) -> Result<(), ReplayFileWriteError> {
+        let elapsed_old = self.elapsed_millis;
+        let timestamp_delta = timestamp.checked_sub(self.elapsed_millis)
+            .ok_or_else(|| ReplayFileWriteError::BadInput { explanation: Cow::Owned(format!("Timestamp overflowed ({elapsed_old} -> {timestamp}")) })?;
+
         self.elapsed_frames += 1;
+        self.elapsed_millis = timestamp;
+
+        self.write_packet_data(&Packet::NextFrame { timestamp_delta })
     }
 
     /// Add a bookmark.
@@ -186,7 +190,8 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
         self.assert_not_closed()?;
         let bookmark_data = BookmarkMetadata {
             name: name.into(),
-            elapsed_frames: self.elapsed_frames
+            elapsed_frames: self.elapsed_frames,
+            elapsed_millis: self.elapsed_millis
         };
 
         self.current_blob_bookmarks.push(bookmark_data.clone());
@@ -198,11 +203,11 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
     /// Add a new keyframe.
     ///
     /// Returns the frame index the keyframe is on.
-    pub fn insert_keyframe(&mut self, state: ByteVec, elapsed_ticks_over_256: UnsignedInteger) -> Result<u64, ReplayFileWriteError> {
-        assert!(self.elapsed_ticks_over_256 <= elapsed_ticks_over_256);
+    pub fn insert_keyframe(&mut self, state: ByteVec, elapsed_millis: TimestampMillis) -> Result<u64, ReplayFileWriteError> {
+        assert!(self.elapsed_millis <= elapsed_millis, "Bad timestamp given (time went backwards!!!); expected {} (current) <= {elapsed_millis} (last)", self.elapsed_millis);
         self.assert_not_closed()?;
 
-        self.elapsed_ticks_over_256 = elapsed_ticks_over_256;
+        self.elapsed_millis = elapsed_millis;
         self.last_keyframe_frames = self.elapsed_frames;
 
         if self.current_blob.len() >= self.settings.minimum_uncompressed_bytes_per_blob {
@@ -213,7 +218,7 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
             input: self.current_input.clone(),
             speed: self.current_speed,
             elapsed_frames: self.elapsed_frames,
-            elapsed_emulator_ticks_over_256: elapsed_ticks_over_256,
+            elapsed_millis,
         };
 
         self.current_blob_keyframes.push(metadata.clone());
@@ -228,9 +233,6 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
 
     fn next_blob(&mut self) -> Result<(), ReplayFileWriteError> {
         self.do_with_poison(|this| {
-            // Close off any pending frames
-            this.write_run_frame_packet_unchecked()?;
-
             let uncompressed_size = this.current_blob.len();
             let compressed = crate::compress_data(this.current_blob.as_slice(), this.settings.compression_level)
                 .map_err(|e| ReplayFileWriteError::Other { explanation: Cow::Owned(format!("next_blob failed to compress: {e}")) })?;
@@ -244,8 +246,8 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
             let compressed_blob = Packet::CompressedBlob {
                 elapsed_frames_start: first_keyframe.elapsed_frames,
                 elapsed_frames_end: this.elapsed_frames,
-                elapsed_emulator_ticks_over_256_start: first_keyframe.elapsed_emulator_ticks_over_256,
-                elapsed_emulator_ticks_over_256_end: this.elapsed_ticks_over_256,
+                timestamp_start: first_keyframe.elapsed_millis,
+                timestamp_end: this.elapsed_millis,
 
                 keyframes: core::mem::take(&mut this.current_blob_keyframes),
                 bookmarks: core::mem::take(&mut this.current_blob_bookmarks),
@@ -308,7 +310,6 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
 
     fn write_packet_data<'a, P: PacketIO<'a>>(&mut self, what: &'a P) -> Result<(), ReplayFileWriteError> {
         self.do_with_poison(|this| {
-            this.write_run_frame_packet_unchecked()?;
             this.write_packet_unchecked(what)?;
             Ok(())
         })
@@ -325,14 +326,6 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
         let sink = self.sink.as_mut().expect("can't get sinks (already closed?)");
 
         (&mut sink.final_sink, &mut sink.temp_sink)
-    }
-
-    fn write_run_frame_packet_unchecked(&mut self) -> Result<(), ReplayFileWriteError> {
-        let frames_since_last_non_frames = core::mem::take(&mut self.frames_since_last_non_frames_packet);
-        if frames_since_last_non_frames > 0 {
-            self.write_packet_unchecked(&Packet::RunFrames { frames: frames_since_last_non_frames })?;
-        }
-        Ok(())
     }
 
     fn do_with_poison<T, F: FnOnce(&mut Self) -> Result<T, ReplayFileWriteError>>(&mut self, f: F) -> Result<T, ReplayFileWriteError> {
@@ -479,9 +472,9 @@ impl ReplayFileSink for NullReplayFileSink {
 pub trait ReplayFileRecorderFns: core::any::Any + 'static + Send {
     fn is_closed(&self) -> bool;
     fn close(&mut self) -> Result<(), ReplayFileWriteError>;
-    fn next_frame(&mut self);
+    fn next_frame(&mut self, timestamp_millis: TimestampMillis) -> Result<(), ReplayFileWriteError>;
     fn add_bookmark(&mut self, name: String) -> Result<(), ReplayFileWriteError>;
-    fn insert_keyframe(&mut self, state: ByteVec, elapsed_ticks_over_256: UnsignedInteger) -> Result<(), ReplayFileWriteError>;
+    fn insert_keyframe(&mut self, state: ByteVec, timestamp_millis: TimestampMillis) -> Result<(), ReplayFileWriteError>;
     fn set_input(&mut self, input_buffer: InputBuffer) -> Result<(), ReplayFileWriteError>;
     fn reset_console(&mut self) -> Result<(), ReplayFileWriteError>;
     fn write_memory(&mut self, address: UnsignedInteger, data: ByteVec) -> Result<(), ReplayFileWriteError>;
@@ -502,8 +495,8 @@ impl<Final: ReplayFileSink + 'static + Send, Temp: ReplayFileSink + 'static + Se
     }
 
     #[inline]
-    fn next_frame(&mut self) {
-        self.next_frame()
+    fn next_frame(&mut self, timestamp: TimestampMillis) -> Result<(), ReplayFileWriteError> {
+        self.next_frame(timestamp)
     }
 
     #[inline]
@@ -512,8 +505,8 @@ impl<Final: ReplayFileSink + 'static + Send, Temp: ReplayFileSink + 'static + Se
     }
 
     #[inline]
-    fn insert_keyframe(&mut self, state: ByteVec, elapsed_ticks_over_256: UnsignedInteger) -> Result<(), ReplayFileWriteError> {
-        self.insert_keyframe(state, elapsed_ticks_over_256)?;
+    fn insert_keyframe(&mut self, state: ByteVec, timestamp: TimestampMillis) -> Result<(), ReplayFileWriteError> {
+        self.insert_keyframe(state, timestamp)?;
         Ok(())
     }
 
