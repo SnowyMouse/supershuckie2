@@ -83,6 +83,8 @@ private:
     QAction *play_replay;
     QAction *auto_stop_replay_on_input;
 
+    QLabel *current_state;
+
     QAction *use_number_row_for_quick_slots;
     QAction *show_status_bar;
     QAction *enable_pokeabyte_integration;

@@ -82,7 +82,10 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
     this->status_bar->addPermanentWidget(this->status_bar_time);
     this->status_bar_time->hide();
 
-    this->status_bar_fps = new QLabel("9999 FPS ", this->status_bar);
+    this->current_state = new QLabel("");
+    this->status_bar->addPermanentWidget(this->current_state);
+
+    this->status_bar_fps = new QLabel("999+ FPS ", this->status_bar);
     this->status_bar_fps->setFixedSize(this->status_bar_fps->sizeHint());
     this->status_bar_fps->setAlignment(Qt::AlignRight);
     this->status_bar_fps->setText("0 FPS ");
@@ -200,7 +203,15 @@ void SuperShuckieMainWindow::tick() {
         this->second_start = now;
 
         char fps_text[16];
-        std::snprintf(fps_text, sizeof(fps_text), "%d FPS ", static_cast<int>(this->current_fps));
+        if(this->current_fps > 999) {
+            std::snprintf(fps_text, sizeof(fps_text), "999+ FPS ");
+        }
+        if(this->current_fps > 0.0 && this->current_fps < 1.0) {
+            std::snprintf(fps_text, sizeof(fps_text), "<1 FPS ");
+        }
+        else {
+            std::snprintf(fps_text, sizeof(fps_text), "%d FPS ", static_cast<int>(this->current_fps));
+        }
         this->status_bar_fps->setText(fps_text);
 
         this->refresh_title();
@@ -466,6 +477,7 @@ void SuperShuckieMainWindow::refresh_action_states() {
         this->play_replay->setEnabled(false);
         this->record_replay->setEnabled(true);
         this->resume_replay->setEnabled(false);
+        this->current_state->setText("RECORDING");
 
         this->record_replay->setText("Stop recording replay");
     }
@@ -473,6 +485,7 @@ void SuperShuckieMainWindow::refresh_action_states() {
         this->play_replay->setEnabled(true);
         this->record_replay->setEnabled(false);
         this->resume_replay->setEnabled(false);
+        this->current_state->setText("PLAYBACK");
 
         // prevent loading any save states (quick_save is still allowed)
         this->redo_load_save_state->setEnabled(false);
@@ -484,6 +497,7 @@ void SuperShuckieMainWindow::refresh_action_states() {
         this->play_replay->setText("Stop replay");
     }
     else {
+        this->current_state->clear();
         this->play_replay->setEnabled(true);
         this->record_replay->setEnabled(true);
         this->resume_replay->setEnabled(true);

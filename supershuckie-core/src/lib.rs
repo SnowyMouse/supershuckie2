@@ -459,7 +459,6 @@ impl SuperShuckieCore {
 
         if let Some(pending_input) = self.next_input.take() {
             self.base_input = pending_input;
-            return
         };
 
         let mut new_input = self.base_input;
@@ -469,10 +468,6 @@ impl SuperShuckieCore {
 
         if let Some(toggled_input) = self.toggled_input {
             new_input |= toggled_input
-        }
-
-        if self.current_input == new_input {
-            return;
         }
 
         self.current_input = new_input;
@@ -583,6 +578,12 @@ impl SuperShuckieCore {
     pub fn detach_replay_player(&mut self) {
         self.replay_stalled = false;
         self.replay_player = None;
+        self.reset_input();
+    }
+
+    /// Reset the current input.
+    pub fn reset_input(&mut self) {
+        self.enqueue_input(Input::new());
     }
 
     /// Seek to the given frame (if playing back).
