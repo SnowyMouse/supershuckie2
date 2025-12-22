@@ -446,6 +446,7 @@ void SuperShuckieMainWindow::refresh_action_states() {
     this->gameplay_menu->setEnabled(game_loaded);
     this->replays_menu->setEnabled(game_loaded);
     this->close_rom->setEnabled(game_loaded);
+    this->unload_rom->setEnabled(game_loaded);
 
     for(auto &state : this->quick_load_save_states) {
         state->setEnabled(game_loaded);

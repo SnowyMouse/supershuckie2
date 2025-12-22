@@ -25,7 +25,7 @@ static NULL_EMULATOR_SCREEN: Lazy<ScreenData> = Lazy::new(|| {
 impl EmulatorCore for NullEmulatorCore {
     fn run(&mut self) -> RunTime {
         RunTime {
-            frames: 1
+            frames: 0
         }
     }
 

@@ -499,7 +499,9 @@ impl SuperShuckieCore {
             rapid_fire.current_frame = rapid_fire.current_frame.wrapping_add(1) % rapid_fire.total_frames;
         }
 
-        if self.replay_player.is_none() {
+        self.mid_frame = time.frames == 0;
+
+        if self.replay_player.is_none() && !self.mid_frame {
             let ms = self.timestamp_provider.get_timestamp() - self.starting_milliseconds;
             self.total_milliseconds = ms;
 
@@ -511,7 +513,6 @@ impl SuperShuckieCore {
             });
         }
 
-        self.mid_frame = time.frames == 0;
     }
 
     fn push_keyframe_if_needed(&mut self) {
