@@ -82,7 +82,10 @@ pub struct ReplaySettings {
     pub zstd_compression_level: i32,
 
     #[serde(default = "ReplaySettings::DEFAULT_FRAMES_PER_KEYFRAME")]
-    pub frames_per_keyframe: NonZeroU64
+    pub frames_per_keyframe: NonZeroU64,
+
+    #[serde(default = "ReplaySettings::AUTO_STOP_PLAYBACK_ON_INPUT")]
+    pub auto_stop_playback_on_input: bool
 }
 
 impl Default for ReplaySettings {
@@ -90,7 +93,8 @@ impl Default for ReplaySettings {
         Self {
             max_blob_size: Self::DEFAULT_MAX_BLOB_SIZE(),
             zstd_compression_level: Self::DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL(),
-            frames_per_keyframe: Self::DEFAULT_FRAMES_PER_KEYFRAME()
+            frames_per_keyframe: Self::DEFAULT_FRAMES_PER_KEYFRAME(),
+            auto_stop_playback_on_input: Self::AUTO_STOP_PLAYBACK_ON_INPUT()
         }
     }
 }
@@ -99,6 +103,7 @@ impl ReplaySettings {
     const DEFAULT_MAX_BLOB_SIZE: fn() -> NonZeroUsize = || unsafe { NonZeroUsize::new_unchecked(ReplayFileRecorderSettings::default().minimum_uncompressed_bytes_per_blob) };
     const DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL: fn() -> i32 = || ReplayFileRecorderSettings::default().compression_level;
     const DEFAULT_FRAMES_PER_KEYFRAME: fn() -> NonZeroU64 = || unsafe { NonZeroU64::new_unchecked(60) };
+    const AUTO_STOP_PLAYBACK_ON_INPUT: fn() -> bool = || false;
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -183,29 +188,30 @@ pub enum GameBoyMode {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct KeyboardControls {
     #[serde(default = "KeyboardControls::DEFAULT_MAP")]
-    pub mappings: BTreeMap<u8, ControlSetting>
+    pub mappings: BTreeMap<i32, ControlSetting>
 }
 
 impl KeyboardControls {
-    const DEFAULT_MAP: fn() -> BTreeMap<u8, ControlSetting> = || {
+    const DEFAULT_MAP: fn() -> BTreeMap<i32, ControlSetting> = || {
         [
-            (b'A', ControlSetting { control: Control::A, modifier: ControlModifier::Normal }),
-            (b'S', ControlSetting { control: Control::B, modifier: ControlModifier::Normal }),
-            (b'Z', ControlSetting { control: Control::A, modifier: ControlModifier::Rapid }),
-            (b'X', ControlSetting { control: Control::B, modifier: ControlModifier::Rapid }),
-            (b'D', ControlSetting { control: Control::X, modifier: ControlModifier::Normal }),
-            (b'F', ControlSetting { control: Control::Y, modifier: ControlModifier::Normal }),
-            (b'Q', ControlSetting { control: Control::L, modifier: ControlModifier::Normal }),
-            (b'W', ControlSetting { control: Control::R, modifier: ControlModifier::Normal }),
+            (b'A' as i32, ControlSetting { control: Control::A, modifier: ControlModifier::Normal }),
+            (b'S' as i32, ControlSetting { control: Control::B, modifier: ControlModifier::Normal }),
+            (b'Z' as i32, ControlSetting { control: Control::A, modifier: ControlModifier::Rapid }),
+            (b'X' as i32, ControlSetting { control: Control::B, modifier: ControlModifier::Rapid }),
+            (b'D' as i32, ControlSetting { control: Control::X, modifier: ControlModifier::Normal }),
+            (b'F' as i32, ControlSetting { control: Control::Y, modifier: ControlModifier::Normal }),
+            (b'Q' as i32, ControlSetting { control: Control::L, modifier: ControlModifier::Normal }),
+            (b'W' as i32, ControlSetting { control: Control::R, modifier: ControlModifier::Normal }),
+            (b' ' as i32, ControlSetting { control: Control::Select, modifier: ControlModifier::Normal }),
 
-            (b' ', ControlSetting { control: Control::Select, modifier: ControlModifier::Normal }),
+            // Return
+            (16777220, ControlSetting { control: Control::Start, modifier: ControlModifier::Normal }),
 
-            // TODO: Figure out what the actual key codes for these are
-            (4, ControlSetting { control: Control::Start, modifier: ControlModifier::Normal }),
-            (18, ControlSetting { control: Control::Left, modifier: ControlModifier::Normal }),
-            (19, ControlSetting { control: Control::Up, modifier: ControlModifier::Normal }),
-            (20, ControlSetting { control: Control::Right, modifier: ControlModifier::Normal }),
-            (21, ControlSetting { control: Control::Down, modifier: ControlModifier::Normal }),
+            // Arrow keys
+            (16777234, ControlSetting { control: Control::Left, modifier: ControlModifier::Normal }),
+            (16777235, ControlSetting { control: Control::Up, modifier: ControlModifier::Normal }),
+            (16777236, ControlSetting { control: Control::Right, modifier: ControlModifier::Normal }),
+            (16777237, ControlSetting { control: Control::Down, modifier: ControlModifier::Normal }),
         ].into_iter().collect()
     };
 }

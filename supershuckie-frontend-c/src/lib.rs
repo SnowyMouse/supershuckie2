@@ -68,7 +68,7 @@ pub unsafe extern "C" fn supershuckie_frontend_new(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn supershuckie_frontend_key_press(
     frontend: &mut SuperShuckieFrontend,
-    key_code: u8,
+    key_code: i32,
     pressed: bool
 ) {
     if let Some(&s) = frontend.get_settings().keyboard_controls.mappings.get(&key_code) {
@@ -331,6 +331,19 @@ pub unsafe extern "C" fn supershuckie_frontend_set_pokeabyte_enabled(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_set_auto_stop_playback_on_input_setting(
+    frontend: &mut SuperShuckieFrontend,
+    new_setting: bool
+) {
+    frontend.set_auto_stop_playback_on_input_setting(new_setting);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_get_auto_stop_playback_on_input_setting(frontend: &SuperShuckieFrontend) -> bool {
+    frontend.get_auto_stop_playback_on_input_setting()
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn supershuckie_frontend_save_sram(
     frontend: &mut SuperShuckieFrontend,
     error: *mut u8,
@@ -380,7 +393,7 @@ pub unsafe extern "C" fn supershuckie_frontend_write_settings(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn supershuckie_frontend_get_keyboard_control_setting(
     frontend: &SuperShuckieFrontend,
-    key_code: u8,
+    key_code: i32,
     setting: *mut ControlSetting
 ) -> bool {
     let Some(s) = frontend.get_settings().keyboard_controls.mappings.get(&key_code) else {

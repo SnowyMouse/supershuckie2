@@ -2,6 +2,7 @@
 #include "main_window.hpp"
 #include <QGraphicsPixmapItem>
 #include <QKeyEvent>
+#include <QMimeData>
 
 #include <supershuckie/frontend.h>
 
@@ -75,5 +76,37 @@ void SuperShuckieRenderWidget::keyReleaseEvent(QKeyEvent *event) {
 
     if(this->main_window->frontend != nullptr) {
         supershuckie_frontend_key_press(this->main_window->frontend, event->key(), false);
+    }
+}
+
+
+template<typename T> static std::optional<std::filesystem::path> validate_event(T *event) {
+    auto *d = event->mimeData();
+    if(d->hasUrls()) {
+        auto urls = d->urls();
+        if(urls.length() == 1) {
+            auto path = std::filesystem::path(urls[0].toLocalFile().toStdString());
+            return path;
+        }
+    }
+    return std::nullopt;
+}
+
+void SuperShuckieRenderWidget::dragEnterEvent(QDragEnterEvent *event) {
+    if(validate_event(event)) {
+        event->accept();
+    }
+}
+
+void SuperShuckieRenderWidget::dragMoveEvent(QDragMoveEvent *event) {
+    if(validate_event(event)) {
+        event->accept();
+    }
+}
+
+void SuperShuckieRenderWidget::dropEvent(QDropEvent *event) {
+    auto path = validate_event(event);
+    if(path) {
+        this->main_window->load_rom(*path);
     }
 }

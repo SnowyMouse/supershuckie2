@@ -7,6 +7,7 @@
 #include <QFileDialog>
 #include <QFontDatabase>
 #include <QLabel>
+#include <QStandardPaths>
 
 #include <supershuckie/frontend.h>
 
@@ -100,7 +101,17 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
     callbacks.user_data = this;
     callbacks.refresh_screens = SuperShuckieMainWindow::on_refresh_screens;
     callbacks.change_video_mode = SuperShuckieMainWindow::on_change_video_mode;
+
+    #ifdef __APPLE__
+    auto app_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(app_dir);
+    this->frontend = supershuckie_frontend_new(
+        app_dir.toStdString().c_str(),
+        &callbacks
+    );
+    #else
     this->frontend = supershuckie_frontend_new("./UserData", &callbacks);
+    #endif
 
     const char *status_bar_visible_setting = supershuckie_frontend_get_custom_setting(this->frontend, DISPLAY_STATUS_BAR);
     bool status_bar_visible = status_bar_visible_setting != nullptr && *status_bar_visible_setting == '1';
@@ -135,6 +146,7 @@ SuperShuckieMainWindow::SuperShuckieMainWindow(): QMainWindow() {
     }
 
     this->pause->setChecked(supershuckie_frontend_is_paused(this->frontend));
+    this->auto_stop_replay_on_input->setChecked(supershuckie_frontend_get_auto_stop_playback_on_input_setting(this->frontend));
 }
 
 void SuperShuckieMainWindow::set_title(const char *title) {
@@ -335,6 +347,11 @@ void SuperShuckieMainWindow::set_up_replays_menu() {
     this->record_replay->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_R));
     this->resume_replay->setShortcut(QKeyCombination(Qt::ShiftModifier | Qt::ControlModifier, Qt::Key_R));
     this->play_replay->setShortcut(QKeyCombination(Qt::ShiftModifier | Qt::ControlModifier, Qt::Key_P));
+
+    this->replays_menu->addSeparator();
+    this->auto_stop_replay_on_input = this->replays_menu->addAction("Stop playback on input");
+    this->auto_stop_replay_on_input->setCheckable(true);
+    connect(this->auto_stop_replay_on_input, SIGNAL(triggered()), this, SLOT(do_toggle_stop_replay_on_input()));
 }
 
 SuperShuckieNumberedAction::SuperShuckieNumberedAction(SuperShuckieMainWindow *parent, const char *text, std::uint8_t number, on_activated activated): QAction(text, parent), number(number), parent(parent), activated_fn(activated) {
@@ -751,4 +768,8 @@ void SuperShuckieMainWindow::do_toggle_pokeabyte() {
         DISPLAY_ERROR_DIALOG("Failed to enable Poke-A-Byte integration", "An error occurred when enabling Poke-A-Byte integration:\n\n%s", err);
         this->enable_pokeabyte_integration->setChecked(false);
     }
+}
+
+void SuperShuckieMainWindow::do_toggle_stop_replay_on_input() {
+    supershuckie_frontend_set_auto_stop_playback_on_input_setting(this->frontend, this->auto_stop_replay_on_input->isChecked());
 }

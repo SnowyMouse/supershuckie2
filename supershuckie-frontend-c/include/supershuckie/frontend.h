@@ -103,7 +103,7 @@ struct SuperShuckieControlSetting {
  */
 bool supershuckie_frontend_get_keyboard_control_setting(
     struct SuperShuckieFrontendRaw *frontend,
-    uint8_t key_code,
+    int32_t key_code,
     SuperShuckieControlSetting *setting
 );
 
@@ -112,7 +112,7 @@ bool supershuckie_frontend_get_keyboard_control_setting(
  */
 void supershuckie_frontend_key_press(
     struct SuperShuckieFrontendRaw *frontend,
-    uint8_t key_code,
+    int32_t key_code,
     bool pressed
 );
 
@@ -265,6 +265,16 @@ bool supershuckie_frontend_load_rom(struct SuperShuckieFrontendRaw *frontend, co
  * - error must be at least result_len bytes long.
  */
 bool supershuckie_frontend_save_sram(struct SuperShuckieFrontendRaw *frontend, char *error, size_t error_len);
+
+/**
+ * Set the auto stop playback setting.
+ */
+void supershuckie_frontend_set_auto_stop_playback_on_input_setting(struct SuperShuckieFrontendRaw *frontend, bool new_setting);
+
+/**
+ * Get the auto stop playback setting.
+ */
+bool supershuckie_frontend_get_auto_stop_playback_on_input_setting(struct SuperShuckieFrontendRaw *frontend);
 
 /**
  * Get the replay playback stats, returning true if currently playing back a replay.

@@ -81,6 +81,7 @@ private:
     QAction *record_replay;
     QAction *resume_replay;
     QAction *play_replay;
+    QAction *auto_stop_replay_on_input;
 
     QAction *use_number_row_for_quick_slots;
     QAction *show_status_bar;
@@ -148,6 +149,7 @@ private slots:
     void do_redo_load_save_state();
     void do_toggle_status_bar();
     void do_toggle_pokeabyte();
+    void do_toggle_stop_replay_on_input();
 };
 
 class SuperShuckieNumberedAction: public QAction {

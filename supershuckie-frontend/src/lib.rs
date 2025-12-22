@@ -210,6 +210,8 @@ impl SuperShuckieFrontend {
             }
         }
 
+        self.save_file = Some(Arc::new("replay".into()));
+
         Ok(true)
     }
 
@@ -218,6 +220,7 @@ impl SuperShuckieFrontend {
     pub fn stop_replay_playback(&mut self) {
         self.core.detach_replay_player();
         self.reset_speed();
+        self.current_input = Input::default();
     }
 
     /// Get the replay playback stats if currently playing back.
@@ -283,6 +286,10 @@ impl SuperShuckieFrontend {
 
     pub fn set_button_input(&mut self, control: &ControlSetting, pressed: bool) {
         if control.control.is_button() {
+            if pressed && self.settings.replay_settings.auto_stop_playback_on_input && self.get_replay_playback_stats().is_some() {
+                self.stop_replay_playback();
+            }
+
             match control.modifier {
                 ControlModifier::Normal => {
                     control.control.set_for_input(&mut self.current_input, pressed);
@@ -591,13 +598,6 @@ impl SuperShuckieFrontend {
         self.settings.custom.get(setting)
     }
 
-    /// Enqueue an input.
-    #[inline]
-    pub fn enqueue_input(&mut self, input: Input) {
-        self.current_input = input;
-        self.core.enqueue_input(input);
-    }
-
     /// Set the current save file, optionally initializing (clearing) the old one.
     ///
     /// The game will be reloaded.
@@ -668,17 +668,30 @@ impl SuperShuckieFrontend {
         self.save_file.as_ref().map(|i| i.as_c_str())
     }
 
+    #[inline]
+    pub fn set_auto_stop_playback_on_input_setting(&mut self, new_setting: bool) {
+        self.settings.replay_settings.auto_stop_playback_on_input = new_setting
+    }
+
+    #[inline]
+    pub fn get_auto_stop_playback_on_input_setting(&self) -> bool {
+        self.settings.replay_settings.auto_stop_playback_on_input
+    }
+
     /// Get the number of milliseconds elapsed.
+    #[inline]
     pub fn get_elapsed_milliseconds(&self) -> u32 {
         self.core.get_elapsed_milliseconds()
     }
 
     /// Get the number of milliseconds elapsed.
+    #[inline]
     pub fn get_elapsed_frames(&self) -> u32 {
         self.core.get_elapsed_frames()
     }
 
     /// Save the settings to disk.
+    #[inline]
     pub fn write_settings(&self) {
         // TODO: handle errors here?
         let _ = std::fs::write(self.user_dir.join(SETTINGS_FILE), serde_json::to_string_pretty(&self.settings).expect("failed to serialize"));

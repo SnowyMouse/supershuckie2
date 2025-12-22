@@ -15,7 +15,7 @@ if(${WIN32})
     set(EXE_TYPE "WIN32")
 endif()
 
-add_executable(supershuckie ${EXE_TYPE}
+add_library(supershuckie-cpp-static STATIC
     src/main.cpp
     src/main_window.cpp
     src/render_widget.cpp
@@ -25,18 +25,50 @@ add_executable(supershuckie ${EXE_TYPE}
     src/select_item_dialog.cpp
 )
 
-set_property(TARGET supershuckie PROPERTY CXX_STANDARD 20)
+set_property(TARGET supershuckie-cpp-static PROPERTY CXX_STANDARD 20)
+
+target_include_directories(supershuckie-cpp-static
+    PRIVATE "${CMAKE_SOURCE_DIR}/../supershuckie-frontend-c/include"
+)
+
+target_link_libraries(supershuckie-cpp-static
+    PUBLIC Qt6::Widgets
+    PUBLIC Qt6::Core
+    PUBLIC SDL3::SDL3
+    PUBLIC supershuckie_frontend_c
+)
 
 find_package(SDL3 REQUIRED CONFIG REQUIRED COMPONENTS SDL3)
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 
-target_include_directories(supershuckie
-    PRIVATE "${CMAKE_SOURCE_DIR}/../supershuckie-frontend-c/include"
-)
+add_executable(supershuckie-debug)
+target_link_libraries(supershuckie-debug supershuckie-cpp-static)
 
-target_link_libraries(supershuckie
-    PRIVATE Qt6::Widgets
-    PRIVATE Qt6::Core
-    PRIVATE SDL3::SDL3
-    PUBLIC supershuckie_frontend_c
-)
+if(${APPLE})
+    set(supershuckie_ICON "${CMAKE_SOURCE_DIR}/supershuckie.icns")
+    set_source_files_properties(${supershuckie_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+    add_executable(supershuckie MACOSX_BUNDLE ${supershuckie_ICON})
+    set_target_properties(supershuckie PROPERTIES
+        MACOSX_BUNDLE_BUNDLE_NAME "SuperShuckie"
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/Info.plist.in"
+        MACOSX_BUNDLE_ICON_FILE "supershuckie.icns"
+        MACOSX_BUNDLE_COPYRIGHT "Snowy"
+        MACOSX_BUNDLE_EXECUTABLE_NAME "supershuckie"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.snowymouse.supershuckie"
+        MACOSX_BUNDLE_LONG_VERSION_STRING "2.0"
+        MACOSX_BUNDLE_BUNDLE_VERSION "2.0"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "2"
+        OUTPUT_NAME "SuperShuckie"
+    )
+elseif(${WIN32})
+    add_executable(supershuckie WIN32)
+    set_target_properties(supershuckie
+        OUTPUT_NAME "SuperShuckie"
+    )
+else()
+    set_target_properties(supershuckie-debug
+        OUTPUT_NAME "supershuckie"
+    )
+endif()
+
+target_link_libraries(supershuckie supershuckie-cpp-static)
