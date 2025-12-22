@@ -27,7 +27,6 @@ use core::mem::transmute;
 use alloc::sync::Arc;
 use alloc::collections::BTreeMap;
 use alloc::vec;
-use std::println;
 use crate::replay_file::{ReplayFileMetadata, ReplayHeaderBytes, ReplayHeaderRaw};
 use crate::{BookmarkMetadata, KeyframeMetadata, Packet, PacketIO, PacketReadError, UnsignedInteger};
 use crate::util::{decompress_data, launder_reference};

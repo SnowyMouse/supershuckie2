@@ -27,7 +27,6 @@ use std::{
     io::{Seek, SeekFrom, Write},
     fs::File
 };
-use std::println;
 
 /// Records a replay file
 ///
@@ -46,8 +45,6 @@ pub struct ReplayFileRecorder<Final: ReplayFileSink, Temp: ReplayFileSink> {
     elapsed_frames: UnsignedInteger,
     elapsed_ticks_over_256: UnsignedInteger,
     last_keyframe_frames: UnsignedInteger,
-
-    all_keyframes: Vec<UnsignedInteger>,
 
     current_speed: Speed,
     current_input: InputBuffer,
@@ -129,7 +126,6 @@ impl<Final: ReplayFileSink, Temp: ReplayFileSink> ReplayFileRecorder<Final, Temp
             current_blob_bookmarks: Vec::new(),
             current_blob_offset: u64::try_from(current_blob_offset).expect("failed to read"),
             frames_since_last_non_frames_packet: 0,
-            all_keyframes: Vec::new(),
             poisoned: false,
             sink: Some(SinkTuple {
                 final_sink, temp_sink

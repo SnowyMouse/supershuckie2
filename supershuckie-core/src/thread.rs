@@ -10,7 +10,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex, TryLockError, Weak};
 use std::time::Duration;
 use std::vec::Vec;
-use std::{format, println};
+use std::format;
 #[cfg(feature = "pokeabyte")]
 use supershuckie_pokeabyte_integration::PokeAByteIntegrationServer;
 use supershuckie_replay_recorder::replay_file::playback::ReplayFilePlayer;
@@ -207,8 +207,7 @@ impl ThreadedSuperShuckieCore {
 
     /// Load the replay.
     pub fn attach_replay_player(&mut self, mut player: ReplayFilePlayer, allow_mismatch: bool) -> Result<(), ReplayPlayerAttachError> {
-        // FIXME
-        // player.enable_threading();
+        player.enable_threading();
 
         let total_ticks = player.get_total_ticks_over_256();
         let total_frames = player.get_total_frames();
