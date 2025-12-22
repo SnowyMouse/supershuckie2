@@ -701,6 +701,7 @@ pub trait MonotonicTimestampProvider {
 }
 
 #[cfg(feature = "std")]
+/// Generate a timestamp provider backed by [`std::time::Instant`]
 pub fn std_timestamp_provider() -> Box<dyn MonotonicTimestampProvider> {
     Box::new(std_timestamp_provider::StdTimestampProvider::new())
 }
