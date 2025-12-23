@@ -143,6 +143,8 @@ private:
     void start_timer();
     int timer_stack = 0;
 
+    QString app_dir;
+
 
 private slots:
     void do_open_rom();
@@ -167,6 +169,7 @@ private slots:
     void do_open_controls_settings_dialog() noexcept;
     void do_toggle_auto_unpause_on_input();
     void do_toggle_auto_pause_on_record();
+    void do_open_user_dir();
 };
 
 class NumberedAction: public QAction {

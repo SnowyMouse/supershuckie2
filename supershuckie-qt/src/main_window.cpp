@@ -8,6 +8,7 @@
 #include <QFontDatabase>
 #include <QLabel>
 #include <QStandardPaths>
+#include <QDesktopServices>
 
 #include <supershuckie/supershuckie.h>
 
@@ -107,15 +108,16 @@ MainWindow::MainWindow(): QMainWindow() {
     callbacks.change_video_mode = MainWindow::on_change_video_mode;
 
     #ifdef __APPLE__
-    auto app_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    this->app_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QDir().mkpath(app_dir);
+    #else
+    this->app_dir = QString("./UserData");
+    #endif
+
     this->frontend = supershuckie_frontend_new(
-        app_dir.toStdString().c_str(),
+        this->app_dir.toStdString().c_str(),
         &callbacks
     );
-    #else
-    this->frontend = supershuckie_frontend_new("./UserData", &callbacks);
-    #endif
 
     const char *status_bar_visible_setting = supershuckie_frontend_get_custom_setting(this->frontend, DISPLAY_STATUS_BAR);
     bool status_bar_visible = status_bar_visible_setting != nullptr && *status_bar_visible_setting == '1';
@@ -272,6 +274,9 @@ void MainWindow::set_up_file_menu() {
     connect(this->unload_rom, SIGNAL(triggered()), this, SLOT(do_unload_rom()));
 
     this->file_menu->addSeparator();
+    auto *open_user_dir = this->file_menu->addAction("Open data directory");
+    connect(open_user_dir, SIGNAL(triggered()), this, SLOT(do_open_user_dir()));
+
     this->quit = this->file_menu->addAction("Quit");
     this->quit->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_Q));
     connect(this->quit, SIGNAL(triggered()), this, SLOT(close()));
@@ -373,7 +378,7 @@ void MainWindow::set_up_replays_menu() {
     this->auto_stop_replay_on_input->setCheckable(true);
     connect(this->auto_stop_replay_on_input, SIGNAL(triggered()), this, SLOT(do_toggle_stop_replay_on_input()));
 
-    this->auto_pause_on_record = this->replays_menu->addAction("Start recording paused");
+    this->auto_pause_on_record = this->replays_menu->addAction("Start recordings paused");
     connect(this->auto_pause_on_record, SIGNAL(triggered()), this, SLOT(do_toggle_auto_pause_on_record()));
     this->auto_pause_on_record->setCheckable(true);
 }
@@ -833,4 +838,8 @@ void MainWindow::do_toggle_auto_unpause_on_input() {
 
 void MainWindow::do_toggle_auto_pause_on_record() {
     supershuckie_frontend_set_auto_pause_on_record_setting(this->frontend, this->auto_pause_on_record->isChecked());
+}
+
+void MainWindow::do_open_user_dir() {
+    QDesktopServices::openUrl(QUrl::fromLocalFile(this->app_dir));
 }
