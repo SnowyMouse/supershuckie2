@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+struct SuperShuckieStringArrayRaw;
+
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -15,27 +17,6 @@ extern "C" {
  * EXCEPT for supershuckie_frontend_free, no functions that take a pointer to a frontend accept a null SuperShuckieFrontendRaw pointer.
  */
 struct SuperShuckieFrontendRaw;
-
-struct SuperShuckieInput {
-    bool a;
-    bool b;
-    bool start;
-    bool select;
-
-    bool d_up;
-    bool d_down;
-    bool d_left;
-    bool d_right;
-
-    bool l;
-    bool r;
-    bool x;
-    bool y;
-
-    // If touch_x and touch_y are not 0xFFFF, simulate a touch button input
-    uint16_t touch_x;
-    uint16_t touch_y;
-};
 
 struct SuperShuckieScreenData {
     uint32_t width;
@@ -95,17 +76,6 @@ struct SuperShuckieControlSetting {
     // SuperShuckieControlSettingModifier
     uint32_t rapid_fire;
 };
-
-/**
- * Get the control setting for the given keycode, returning true if a setting is set for the given keycode.
- *
- * Setting can be null, in which case, it can be used for just checking if a key code corresponds to a control.
- */
-bool supershuckie_frontend_get_keyboard_control_setting(
-    struct SuperShuckieFrontendRaw *frontend,
-    int32_t key_code,
-    SuperShuckieControlSetting *setting
-);
 
 /**
  * Set the current state for a keyboard key press, if any.
@@ -383,32 +353,6 @@ void supershuckie_frontend_tick(struct SuperShuckieFrontendRaw *frontend);
  * - frontend, if non-null, may only be freed once
  */
 void supershuckie_frontend_free(struct SuperShuckieFrontendRaw *frontend);
-
-/**
- * A string array holding zero or more null-terminated UTF8 strings.
- *
- * This can never be null EXCEPT in the supershuckie_stringarray_free function (which this array must be freed in if
- * retrieved from SuperShuckie).
- */
-struct SuperShuckieStringArrayRaw;
-
-/**
- * Get the length of a string array.
- */
-size_t supershuckie_stringarray_len(const struct SuperShuckieStringArrayRaw *array);
-
-/**
- * Get the element at the given position in the array, or null if out-of-bounds.
- */
-const char *supershuckie_stringarray_get(const struct SuperShuckieStringArrayRaw *array, size_t position);
-
-/**
- * Free the string array.
- *
- * Safety:
- * - A pointer may only be freed once (unless the pointer is null)
- */
-void supershuckie_stringarray_free(struct SuperShuckieStringArrayRaw *array);
 
 /**
  * Get all replays for the given rom, or the currently loaded ROM if no ROM passed in.

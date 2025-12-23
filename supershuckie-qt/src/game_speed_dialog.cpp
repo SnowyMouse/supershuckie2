@@ -86,3 +86,9 @@ void GameSpeedDialog::do_update_speed() {
     std::snprintf(fmt, sizeof(fmt), "= ~%d FPS", static_cast<int>(base_speed * this->turbo_speed_slider->value() / 100.0));
     this->turbo_speed_text->setText(fmt);
 }
+int GameSpeedDialog::exec() {
+    this->parent->stop_timer();
+    int return_value = QDialog::exec();
+    this->parent->start_timer();
+    return return_value;
+}

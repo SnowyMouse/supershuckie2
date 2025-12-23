@@ -13,8 +13,12 @@ class MainWindow;
 class GameSpeedDialog: public QDialog {
     Q_OBJECT
     friend MainWindow;
-private:
+
+public:
     GameSpeedDialog(MainWindow *parent);
+    int exec() override;
+
+private:
     MainWindow *parent;
     QSpinBox *base_speed_slider;
     QSpinBox *turbo_speed_slider;

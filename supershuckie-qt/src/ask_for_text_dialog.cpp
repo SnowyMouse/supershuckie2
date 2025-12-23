@@ -1,5 +1,6 @@
 
 #include "ask_for_text_dialog.hpp"
+#include "main_window.hpp"
 
 #include <QGridLayout>
 #include <QLineEdit>
@@ -8,7 +9,7 @@
 
 using namespace SuperShuckie64;
 
-AskForTextDialog::AskForTextDialog(QWidget *parent, const QString &title, const QString &message, const QString &subtext): QDialog(parent) {
+AskForTextDialog::AskForTextDialog(MainWindow *parent, const QString &title, const QString &message, const QString &subtext): QDialog(parent), parent(parent) {
     this->setWindowTitle(title);
 
     auto *layout = new QGridLayout(this);
@@ -38,7 +39,7 @@ QString AskForTextDialog::text() const {
     return this->textbox->text();
 }
 
-std::optional<std::string> AskForTextDialog::ask(QWidget *parent, const QString &title, const QString &message, const QString &subtext) {
+std::optional<std::string> AskForTextDialog::ask(MainWindow *parent, const QString &title, const QString &message, const QString &subtext) {
     auto *dialog = new AskForTextDialog(parent, title, message, subtext);
     int exec_result = dialog->exec();
     auto text = dialog->text().toStdString();
@@ -49,4 +50,11 @@ std::optional<std::string> AskForTextDialog::ask(QWidget *parent, const QString 
     }
 
     return text;
+}
+
+int AskForTextDialog::exec() {
+    this->parent->stop_timer();
+    int return_value = QDialog::exec();
+    this->parent->start_timer();
+    return return_value;
 }

@@ -11,14 +11,18 @@ class QListWidget;
 
 namespace SuperShuckie64 {
 
+class MainWindow;
+
 class SelectItemDialog: public QDialog {
     Q_OBJECT
 public:
-    SelectItemDialog(QWidget *parent, std::vector<std::string> items, const QString &title, const QString &message, const QString &subtext = "");
+    SelectItemDialog(MainWindow *parent, std::vector<std::string> items, const QString &title, const QString &message, const QString &subtext = "");
     QString text() const;
-    static std::optional<std::string> ask(QWidget *parent, std::vector<std::string> items, const QString &title, const QString &message, const QString &subtext = "");
+    int exec() override;
+    static std::optional<std::string> ask(MainWindow *parent, std::vector<std::string> items, const QString &title, const QString &message, const QString &subtext = "");
 private:
     QListWidget *list = nullptr;
+    MainWindow *parent;
 };
 
 }

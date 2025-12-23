@@ -46,8 +46,8 @@ pub struct Settings {
     #[serde(default = "GameBoySettings::default")]
     pub game_boy_settings: GameBoySettings,
 
-    #[serde(default = "KeyboardControls::default")]
-    pub keyboard_controls: KeyboardControls,
+    #[serde(default = "Controls::default")]
+    pub controls: Controls,
     
     #[serde(default = "ReplaySettings::default")]
     pub replay_settings: ReplaySettings,
@@ -186,42 +186,53 @@ pub enum GameBoyMode {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct KeyboardControls {
-    #[serde(default = "KeyboardControls::DEFAULT_MAP")]
-    pub mappings: BTreeMap<i32, ControlSetting>
+pub struct Controls {
+    #[serde(default = "BTreeMap::default")]
+    pub keyboard_controls: BTreeMap<i32, ControlSetting>,
+
+    #[serde(default = "BTreeMap::default")]
+    pub controller_controls: BTreeMap<String, ControllerSettings>
 }
 
-impl KeyboardControls {
-    const DEFAULT_MAP: fn() -> BTreeMap<i32, ControlSetting> = || {
-        [
-            (b'A' as i32, ControlSetting { control: Control::A, modifier: ControlModifier::Normal }),
-            (b'S' as i32, ControlSetting { control: Control::B, modifier: ControlModifier::Normal }),
-            (b'Z' as i32, ControlSetting { control: Control::A, modifier: ControlModifier::Rapid }),
-            (b'X' as i32, ControlSetting { control: Control::B, modifier: ControlModifier::Rapid }),
-            (b'D' as i32, ControlSetting { control: Control::X, modifier: ControlModifier::Normal }),
-            (b'F' as i32, ControlSetting { control: Control::Y, modifier: ControlModifier::Normal }),
-            (b'Q' as i32, ControlSetting { control: Control::L, modifier: ControlModifier::Normal }),
-            (b'W' as i32, ControlSetting { control: Control::R, modifier: ControlModifier::Normal }),
-            (b' ' as i32, ControlSetting { control: Control::Select, modifier: ControlModifier::Normal }),
-
-            // Return
-            (16777220, ControlSetting { control: Control::Start, modifier: ControlModifier::Normal }),
-
-            // Arrow keys
-            (16777234, ControlSetting { control: Control::Left, modifier: ControlModifier::Normal }),
-            (16777235, ControlSetting { control: Control::Up, modifier: ControlModifier::Normal }),
-            (16777236, ControlSetting { control: Control::Right, modifier: ControlModifier::Normal }),
-            (16777237, ControlSetting { control: Control::Down, modifier: ControlModifier::Normal }),
-        ].into_iter().collect()
-    };
-}
-
-impl Default for KeyboardControls {
+impl Default for Controls {
     fn default() -> Self {
         Self {
-            mappings: Self::DEFAULT_MAP()
+            // FIXME: we do not want any default keyboard controls once we have custom controls
+            keyboard_controls: {
+                [
+                    (b'A' as i32, ControlSetting { control: Control::A, modifier: ControlModifier::Normal }),
+                    (b'S' as i32, ControlSetting { control: Control::B, modifier: ControlModifier::Normal }),
+                    (b'Z' as i32, ControlSetting { control: Control::A, modifier: ControlModifier::Rapid }),
+                    (b'X' as i32, ControlSetting { control: Control::B, modifier: ControlModifier::Rapid }),
+                    (b'D' as i32, ControlSetting { control: Control::X, modifier: ControlModifier::Normal }),
+                    (b'F' as i32, ControlSetting { control: Control::Y, modifier: ControlModifier::Normal }),
+                    (b'Q' as i32, ControlSetting { control: Control::L, modifier: ControlModifier::Normal }),
+                    (b'W' as i32, ControlSetting { control: Control::R, modifier: ControlModifier::Normal }),
+                    (b' ' as i32, ControlSetting { control: Control::Select, modifier: ControlModifier::Normal }),
+
+                    // Return
+                    (16777220, ControlSetting { control: Control::Start, modifier: ControlModifier::Normal }),
+
+                    // Arrow keys
+                    (16777234, ControlSetting { control: Control::Left, modifier: ControlModifier::Normal }),
+                    (16777235, ControlSetting { control: Control::Up, modifier: ControlModifier::Normal }),
+                    (16777236, ControlSetting { control: Control::Right, modifier: ControlModifier::Normal }),
+                    (16777237, ControlSetting { control: Control::Down, modifier: ControlModifier::Normal }),
+                ].into_iter().collect()
+            },
+
+            controller_controls: BTreeMap::new()
         }
     }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ControllerSettings {
+    #[serde(default = "BTreeMap::default")]
+    pub buttons: BTreeMap<i32, ControlSetting>,
+
+    #[serde(default = "BTreeMap::default")]
+    pub axis: BTreeMap<i32, ControlSetting>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]

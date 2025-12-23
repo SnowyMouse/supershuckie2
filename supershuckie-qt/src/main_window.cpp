@@ -9,7 +9,7 @@
 #include <QLabel>
 #include <QStandardPaths>
 
-#include <supershuckie/frontend.h>
+#include <supershuckie/supershuckie.h>
 
 #include "ask_for_text_dialog.hpp"
 #include "select_item_dialog.hpp"
@@ -18,6 +18,7 @@
 #include "game_speed_dialog.hpp"
 #include "render_widget.hpp"
 #include "main_window.hpp"
+#include "controller_settings_window.hpp"
 
 using namespace SuperShuckie64;
 
@@ -313,10 +314,10 @@ void MainWindow::set_up_save_states_menu() {
         QMenu *menu = quick_slots->addMenu(fmt);
 
         std::snprintf(fmt, sizeof(fmt), "Load quick slot #%zu", i);
-        auto *quick_load = new SuperShuckieNumberedAction(this, fmt, i, &MainWindow::quick_load);
+        auto *quick_load = new NumberedAction(this, fmt, i, &MainWindow::quick_load);
 
         std::snprintf(fmt, sizeof(fmt), "Save quick slot #%zu", i);
-        auto *quick_save = new SuperShuckieNumberedAction(this, fmt, i, &MainWindow::quick_save);
+        auto *quick_save = new NumberedAction(this, fmt, i, &MainWindow::quick_save);
 
         this->quick_load_save_states[i - 1] = quick_load;
         menu->addAction(quick_load);
@@ -365,11 +366,11 @@ void MainWindow::set_up_replays_menu() {
     connect(this->auto_stop_replay_on_input, SIGNAL(triggered()), this, SLOT(do_toggle_stop_replay_on_input()));
 }
 
-SuperShuckieNumberedAction::SuperShuckieNumberedAction(MainWindow *parent, const char *text, std::uint8_t number, on_activated activated): QAction(text, parent), number(number), parent(parent), activated_fn(activated) {
+NumberedAction::NumberedAction(MainWindow *parent, const char *text, std::uint8_t number, on_activated activated): QAction(text, parent), number(number), parent(parent), activated_fn(activated) {
     connect(this, SIGNAL(triggered()), this, SLOT(activated()));
 }
 
-void SuperShuckieNumberedAction::activated() {
+void NumberedAction::activated() {
     if(this->parent->frontend == nullptr) {
         return;
     }
@@ -425,20 +426,24 @@ void MainWindow::quick_load(std::uint8_t index) {
 
 void MainWindow::set_up_settings_menu() {
     this->settings_menu = this->menu_bar->addMenu("Settings");
+
+    auto *game_speed = this->settings_menu->addAction("Game speed...");
+    connect(game_speed, SIGNAL(triggered()), this, SLOT(do_open_game_speed_dialog()));
+
+    auto *controller_settings = this->settings_menu->addAction("Controls settings...");
+    connect(controller_settings, SIGNAL(triggered()), this, SLOT(do_open_controls_settings_dialog()));
+    controller_settings->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_A)); // FIXME: we do not want a shortcut for this; this is just for testing
     
     auto *video_scaling = this->settings_menu->addMenu("Video scaling");
     for(std::size_t i = 1; i <= MainWindow::VIDEO_SCALE_COUNT; i++) {
         char fmt[256];
         std::snprintf(fmt, sizeof(fmt), "%zux", i);
 
-        auto *action = new SuperShuckieNumberedAction(this, fmt, static_cast<uint8_t>(i), &MainWindow::set_video_scale);
+        auto *action = new NumberedAction(this, fmt, static_cast<uint8_t>(i), &MainWindow::set_video_scale);
         video_scaling->addAction(action);
         this->change_video_scale[i - 1] = action;
         action->setCheckable(true);
     }
-
-    auto *game_speed = this->settings_menu->addAction("Game speed...");
-    connect(game_speed, SIGNAL(triggered()), this, SLOT(do_open_game_speed_dialog()));
 
     this->settings_menu->addSeparator();
 
@@ -787,4 +792,26 @@ void MainWindow::do_toggle_pokeabyte() {
 
 void MainWindow::do_toggle_stop_replay_on_input() {
     supershuckie_frontend_set_auto_stop_playback_on_input_setting(this->frontend, this->auto_stop_replay_on_input->isChecked());
+}
+
+void MainWindow::start_timer() {
+    this->timer_stack--;
+    if(this->timer_stack == 0) {
+        this->ticker.start();
+    }
+    if(this->timer_stack < 0) {
+        DISPLAY_ERROR_DIALOG("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        this->timer_stack = 0;
+    }
+}
+
+void MainWindow::stop_timer() {
+    this->timer_stack++;
+    this->ticker.stop();
+}
+
+void MainWindow::do_open_controls_settings_dialog() noexcept {
+    auto *settings = new ControlsSettingsWindow(this);
+    settings->exec();
+    delete settings;
 }

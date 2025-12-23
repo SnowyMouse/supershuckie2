@@ -1,5 +1,6 @@
 
 #include "select_item_dialog.hpp"
+#include "main_window.hpp"
 
 #include <QGridLayout>
 #include <QListWidget>
@@ -8,7 +9,7 @@
 
 using namespace SuperShuckie64;
 
-SelectItemDialog::SelectItemDialog(QWidget *parent, std::vector<std::string> items, const QString &title, const QString &message, const QString &subtext): QDialog(parent) {
+SelectItemDialog::SelectItemDialog(MainWindow *parent, std::vector<std::string> items, const QString &title, const QString &message, const QString &subtext): QDialog(parent), parent(parent) {
     this->setWindowTitle(title);
 
     auto *layout = new QGridLayout(this);
@@ -50,7 +51,7 @@ QString SelectItemDialog::text() const {
     return item->text();
 }
 
-std::optional<std::string> SelectItemDialog::ask(QWidget *parent, std::vector<std::string> items, const QString &title, const QString &message, const QString &subtext) {
+std::optional<std::string> SelectItemDialog::ask(MainWindow *parent, std::vector<std::string> items, const QString &title, const QString &message, const QString &subtext) {
     auto *dialog = new SelectItemDialog(parent, items, title, message, subtext);
     int exec_result = dialog->exec();
     auto text = dialog->text().toStdString();
@@ -61,4 +62,11 @@ std::optional<std::string> SelectItemDialog::ask(QWidget *parent, std::vector<st
     }
 
     return text;
+}
+
+int SelectItemDialog::exec() {
+    this->parent->stop_timer();
+    int return_value = QDialog::exec();
+    this->parent->start_timer();
+    return return_value;
 }

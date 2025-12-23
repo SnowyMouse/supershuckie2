@@ -10,15 +10,20 @@ class QLineEdit;
 
 namespace SuperShuckie64 {
 
+class MainWindow;
+
 class AskForTextDialog: public QDialog {
     Q_OBJECT
 public:
-    AskForTextDialog(QWidget *parent, const QString &title, const QString &message, const QString &subtext = "");
+    AskForTextDialog(MainWindow *parent, const QString &title, const QString &message, const QString &subtext = "");
     QString text() const;
 
-    static std::optional<std::string> ask(QWidget *parent, const QString &title, const QString &message, const QString &subtext = "");
+    int exec() override;
+
+    static std::optional<std::string> ask(MainWindow *parent, const QString &title, const QString &message, const QString &subtext = "");
 private:
     QLineEdit *textbox = nullptr;
+    MainWindow *parent;
 };
 
 }

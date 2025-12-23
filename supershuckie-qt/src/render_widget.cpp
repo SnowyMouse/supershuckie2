@@ -4,7 +4,7 @@
 #include <QKeyEvent>
 #include <QMimeData>
 
-#include <supershuckie/frontend.h>
+#include <supershuckie/supershuckie.h>
 
 using namespace SuperShuckie64;
 

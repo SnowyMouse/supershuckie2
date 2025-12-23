@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <chrono>
-#include <supershuckie/frontend.h>
+#include <supershuckie/supershuckie.h>
 
 class QMenu;
 class QAction;
@@ -16,9 +16,12 @@ class QLabel;
 namespace SuperShuckie64 {
 
 class GameRenderWidget;
-class SuperShuckieNumberedAction;
+class NumberedAction;
 class GameSpeedDialog;
 class SuperShuckieTimestamp;
+class AskForTextDialog;
+class SelectItemDialog;
+class ControlsSettingsWindow;
 
 enum ReplayStatus {
     NoReplay,
@@ -29,8 +32,11 @@ enum ReplayStatus {
 class MainWindow: public QMainWindow {
     Q_OBJECT
     friend GameRenderWidget;
-    friend SuperShuckieNumberedAction;
+    friend NumberedAction;
     friend GameSpeedDialog;
+    friend AskForTextDialog;
+    friend SelectItemDialog;
+    friend ControlsSettingsWindow;
     
 public:
     MainWindow();
@@ -96,7 +102,7 @@ private:
 
     static const std::size_t VIDEO_SCALE_COUNT = 12;
 
-    SuperShuckieNumberedAction *change_video_scale[VIDEO_SCALE_COUNT];
+    NumberedAction *change_video_scale[VIDEO_SCALE_COUNT];
 
     bool use_number_keys_for_quick_slots = false;
 
@@ -131,6 +137,10 @@ private:
     clock::time_point second_start;
     void refresh_title();
 
+    void stop_timer();
+    void start_timer();
+    int timer_stack = 0;
+
 
 private slots:
     void do_open_rom();
@@ -152,14 +162,15 @@ private slots:
     void do_toggle_status_bar();
     void do_toggle_pokeabyte();
     void do_toggle_stop_replay_on_input();
+    void do_open_controls_settings_dialog() noexcept;
 };
 
-class SuperShuckieNumberedAction: public QAction {
+class NumberedAction: public QAction {
     Q_OBJECT
     friend MainWindow;
 public:
     typedef void (MainWindow::*on_activated)(std::uint8_t);
-    SuperShuckieNumberedAction(MainWindow *parent, const char *text, std::uint8_t number, on_activated activated);
+    NumberedAction(MainWindow *parent, const char *text, std::uint8_t number, on_activated activated);
 private:
     std::uint8_t number;
     MainWindow *parent;

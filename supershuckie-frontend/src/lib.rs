@@ -27,6 +27,11 @@ pub enum SuperShuckieEmulatorType {
     GameBoyColor
 }
 
+pub enum UserInput {
+    Keyboard { keycode: i32 },
+    // Axis { axis: i32 }
+}
+
 pub struct SuperShuckieFrontend {
     core: ThreadedSuperShuckieCore,
     core_metadata: CoreMetadata,
@@ -284,7 +289,16 @@ impl SuperShuckieFrontend {
         true
     }
 
-    pub fn set_button_input(&mut self, control: &ControlSetting, pressed: bool) {
+    pub fn on_user_input(&mut self, input: UserInput, value: f64) {
+        let Some(control) = (match input {
+            UserInput::Keyboard { keycode } => self.settings.controls.keyboard_controls.get(&keycode).copied()
+        })
+        else {
+            return
+        };
+
+        let pressed = value > 0.5;
+
         if control.control.is_button() {
             if pressed && self.settings.replay_settings.auto_stop_playback_on_input && self.get_replay_playback_stats().is_some() {
                 self.stop_replay_playback();
@@ -334,7 +348,7 @@ impl SuperShuckieFrontend {
         }
         else if self.is_game_running() {
             match control.control {
-                Control::Turbo => self.apply_turbo(pressed.then_some(1.0).unwrap_or(0.0)),
+                Control::Turbo => self.apply_turbo(value),
                 Control::Reset => if pressed {
                     self.core.hard_reset();
                 }
@@ -399,6 +413,16 @@ impl SuperShuckieFrontend {
         self.save_file = Some(Arc::new(self.get_current_save_file_name_for_rom(filename)));
         self.reload_rom_in_place();
         Ok(())
+    }
+
+    /// Get the control settings.
+    pub fn get_control_settings(&self) -> &Controls {
+        &self.settings.controls
+    }
+
+    /// Overwrite the control settings.
+    pub fn set_control_settings(&mut self, controls: Controls) {
+        self.settings.controls = controls
     }
 
     /// Hard reset the console.
@@ -572,6 +596,12 @@ impl SuperShuckieFrontend {
 
         *old_scale = scale;
         self.update_video_mode();
+    }
+
+    /// Get the game speed settings.
+    pub fn get_speed_settings(&self, base: &mut f64, turbo: &mut f64) {
+        *base = self.settings.emulation.base_speed_multiplier;
+        *turbo = self.settings.emulation.turbo_speed_multiplier;
     }
 
     /// Set the game speed.
