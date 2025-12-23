@@ -304,6 +304,10 @@ impl SuperShuckieFrontend {
                 self.stop_replay_playback();
             }
 
+            if pressed && self.settings.replay_settings.auto_unpause_on_input && self.is_paused() {
+                self.set_paused(false);
+            }
+
             match control.modifier {
                 ControlModifier::Normal => {
                     control.control.set_for_input(&mut self.current_input, pressed);
@@ -708,6 +712,26 @@ impl SuperShuckieFrontend {
         self.settings.replay_settings.auto_stop_playback_on_input
     }
 
+    #[inline]
+    pub fn set_auto_unpause_on_input_setting(&mut self, new_setting: bool) {
+        self.settings.replay_settings.auto_unpause_on_input = new_setting
+    }
+
+    #[inline]
+    pub fn get_auto_unpause_on_input_setting(&self) -> bool {
+        self.settings.replay_settings.auto_unpause_on_input
+    }
+
+    #[inline]
+    pub fn set_auto_pause_on_record_setting(&mut self, new_setting: bool) {
+        self.settings.replay_settings.auto_pause_on_record = new_setting
+    }
+
+    #[inline]
+    pub fn get_auto_pause_on_record_setting(&self) -> bool {
+        self.settings.replay_settings.auto_pause_on_record
+    }
+
     /// Get the number of milliseconds elapsed.
     #[inline]
     pub fn get_elapsed_milliseconds(&self) -> u32 {
@@ -748,6 +772,10 @@ impl SuperShuckieFrontend {
 
         let (final_file, final_replay, _) = self.load_file_or_make_generic(&save_states_dir, name, None, REPLAY_EXTENSION)?;
         let (temp_file, _, temp_replay) = self.load_file_or_make_generic(&save_states_dir, name, Some("temp"), REPLAY_EXTENSION)?;
+
+        if self.settings.replay_settings.auto_pause_on_record {
+            self.set_paused(true);
+        }
 
         self.core.start_recording_replay(PartialReplayRecordMetadata {
             rom_name: current_rom_name.to_string(),

@@ -67,11 +67,12 @@ pub struct SuperShuckieCore {
     input_scratch_buffer: Vec<u8>,
     starting_milliseconds: TimestampMillis,
     total_milliseconds: TimestampMillis,
+    paused_timer_at: Option<TimestampMillis>,
     game_speed: Speed,
 
     frames_since_last_keyframe: u64,
     frames_per_keyframe: u64,
-    total_frames: u64
+    total_frames: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -136,6 +137,7 @@ impl SuperShuckieCore {
             replay_player: None,
             replay_frames_delay: 0u64,
             replay_stalled: false,
+            paused_timer_at: None,
             core: emulator_core,
             timestamp_provider
         }
@@ -176,6 +178,28 @@ impl SuperShuckieCore {
     pub fn enqueue_write(&mut self, address: u32, data: ByteVec) {
         self.writes.push(QueuedWrite { address, data });
         self.flush_writes();
+    }
+
+    /// Pause the current timer.
+    pub fn pause_timer(&mut self) {
+        self.paused_timer_at = Some(self.total_milliseconds + self.starting_milliseconds);
+    }
+
+    /// Unpause the current timer if it is currently paused.
+    pub fn unpause_timer(&mut self) {
+        let Some(paused_time) = self.paused_timer_at.take() else {
+            return
+        };
+        let unpaused_time = self.timestamp_provider.get_timestamp();
+
+        self.starting_milliseconds = self.starting_milliseconds.wrapping_add(unpaused_time.wrapping_sub(paused_time));
+    }
+
+    fn restart_timer(&mut self) {
+        self.paused_timer_at = None;
+        self.starting_milliseconds = self.timestamp_provider.get_timestamp();
+        self.total_milliseconds = 0;
+        self.total_frames = 0;
     }
 
     /// Get an immutable reference to the underlying core.
@@ -382,10 +406,7 @@ impl SuperShuckieCore {
         let mut initial_input_data = Vec::new();
         self.core.encode_input(initial_input, &mut initial_input_data);
         self.core.set_input_encoded(&initial_input_data);
-
-        self.total_frames = 0;
-        self.total_milliseconds = 0;
-        self.starting_milliseconds = self.timestamp_provider.get_timestamp();
+        self.restart_timer();
 
         let recorder = NonBlockingReplayFileRecorder::new(ReplayFileRecorder::new_with_metadata(
             ReplayFileMetadata {
@@ -566,8 +587,7 @@ impl SuperShuckieCore {
         self.next_input = None;
         self.replay_player = Some(player);
         self.replay_stalled = false;
-        self.total_milliseconds = 0;
-        self.starting_milliseconds = self.timestamp_provider.get_timestamp();
+        self.restart_timer();
 
         self.go_to_replay_frame(0);
 

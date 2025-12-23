@@ -151,6 +151,8 @@ MainWindow::MainWindow(): QMainWindow() {
 
     this->pause->setChecked(supershuckie_frontend_is_paused(this->frontend));
     this->auto_stop_replay_on_input->setChecked(supershuckie_frontend_get_auto_stop_playback_on_input_setting(this->frontend));
+    this->auto_unpause_on_input->setChecked(supershuckie_frontend_get_auto_unpause_on_input_setting(this->frontend));
+    this->auto_pause_on_record->setChecked(supershuckie_frontend_get_auto_pause_on_record_setting(this->frontend));
 }
 
 void MainWindow::set_title(const char *title) {
@@ -237,6 +239,7 @@ void MainWindow::tick() {
     }
 
     supershuckie_frontend_tick(this->frontend);
+    this->pause->setChecked(supershuckie_frontend_is_paused(this->frontend));
 }
 
 void MainWindow::set_up_menu() {
@@ -301,6 +304,11 @@ void MainWindow::set_up_gameplay_menu() {
     this->pause->setCheckable(true);
     this->pause->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_P));
     connect(this->pause, SIGNAL(triggered()), this, SLOT(do_toggle_pause()));
+
+    this->gameplay_menu->addSeparator();
+    this->auto_unpause_on_input = this->gameplay_menu->addAction("Unpause on input");
+    this->auto_unpause_on_input->setCheckable(true);
+    connect(this->auto_unpause_on_input, SIGNAL(triggered()), this, SLOT(do_toggle_auto_unpause_on_input()));
 }
 
 void MainWindow::set_up_save_states_menu() {
@@ -364,6 +372,10 @@ void MainWindow::set_up_replays_menu() {
     this->auto_stop_replay_on_input = this->replays_menu->addAction("Stop playback on input");
     this->auto_stop_replay_on_input->setCheckable(true);
     connect(this->auto_stop_replay_on_input, SIGNAL(triggered()), this, SLOT(do_toggle_stop_replay_on_input()));
+
+    this->auto_pause_on_record = this->replays_menu->addAction("Start recording paused");
+    connect(this->auto_pause_on_record, SIGNAL(triggered()), this, SLOT(do_toggle_auto_pause_on_record()));
+    this->auto_pause_on_record->setCheckable(true);
 }
 
 NumberedAction::NumberedAction(MainWindow *parent, const char *text, std::uint8_t number, on_activated activated): QAction(text, parent), number(number), parent(parent), activated_fn(activated) {
@@ -478,16 +490,18 @@ void MainWindow::refresh_action_states() {
     this->record_replay->setText("Record replay");
     this->play_replay->setText("Play replay");
 
+    this->play_replay->setEnabled(game_loaded);
+    this->record_replay->setEnabled(game_loaded);
+    this->resume_replay->setEnabled(game_loaded);
+
     if(this->frontend != nullptr && supershuckie_frontend_get_recording_replay_file(this->frontend) != nullptr) {
         this->play_replay->setEnabled(false);
-        this->record_replay->setEnabled(true);
         this->resume_replay->setEnabled(false);
         this->current_state->setText("RECORDING");
 
         this->record_replay->setText("Stop recording replay");
     }
     else if(this->frontend != nullptr && supershuckie_frontend_get_replay_playback_time(this->frontend, nullptr, nullptr)) {
-        this->play_replay->setEnabled(true);
         this->record_replay->setEnabled(false);
         this->resume_replay->setEnabled(false);
         this->current_state->setText("PLAYBACK");
@@ -503,9 +517,6 @@ void MainWindow::refresh_action_states() {
     }
     else {
         this->current_state->clear();
-        this->play_replay->setEnabled(true);
-        this->record_replay->setEnabled(true);
-        this->resume_replay->setEnabled(true);
     }
 }
 
@@ -814,4 +825,12 @@ void MainWindow::do_open_controls_settings_dialog() noexcept {
     auto *settings = new ControlsSettingsWindow(this);
     settings->exec();
     delete settings;
+}
+
+void MainWindow::do_toggle_auto_unpause_on_input() {
+    supershuckie_frontend_set_auto_unpause_on_input_setting(this->frontend, this->auto_unpause_on_input->isChecked());
+}
+
+void MainWindow::do_toggle_auto_pause_on_record() {
+    supershuckie_frontend_set_auto_pause_on_record_setting(this->frontend, this->auto_pause_on_record->isChecked());
 }

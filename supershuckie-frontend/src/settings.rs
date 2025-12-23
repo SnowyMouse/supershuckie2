@@ -85,7 +85,13 @@ pub struct ReplaySettings {
     pub frames_per_keyframe: NonZeroU64,
 
     #[serde(default = "ReplaySettings::AUTO_STOP_PLAYBACK_ON_INPUT")]
-    pub auto_stop_playback_on_input: bool
+    pub auto_stop_playback_on_input: bool,
+
+    #[serde(default = "ReplaySettings::AUTO_UNPAUSE_ON_INPUT")]
+    pub auto_unpause_on_input: bool,
+
+    #[serde(default = "ReplaySettings::AUTO_PAUSE_ON_RECORD")]
+    pub auto_pause_on_record: bool,
 }
 
 impl Default for ReplaySettings {
@@ -94,7 +100,9 @@ impl Default for ReplaySettings {
             max_blob_size: Self::DEFAULT_MAX_BLOB_SIZE(),
             zstd_compression_level: Self::DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL(),
             frames_per_keyframe: Self::DEFAULT_FRAMES_PER_KEYFRAME(),
-            auto_stop_playback_on_input: Self::AUTO_STOP_PLAYBACK_ON_INPUT()
+            auto_stop_playback_on_input: Self::AUTO_STOP_PLAYBACK_ON_INPUT(),
+            auto_unpause_on_input: Self::AUTO_UNPAUSE_ON_INPUT(),
+            auto_pause_on_record: Self::AUTO_PAUSE_ON_RECORD()
         }
     }
 }
@@ -104,6 +112,8 @@ impl ReplaySettings {
     const DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL: fn() -> i32 = || ReplayFileRecorderSettings::default().compression_level;
     const DEFAULT_FRAMES_PER_KEYFRAME: fn() -> NonZeroU64 = || unsafe { NonZeroU64::new_unchecked(60) };
     const AUTO_STOP_PLAYBACK_ON_INPUT: fn() -> bool = || false;
+    const AUTO_UNPAUSE_ON_INPUT: fn() -> bool = || false;
+    const AUTO_PAUSE_ON_RECORD: fn() -> bool = || false;
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

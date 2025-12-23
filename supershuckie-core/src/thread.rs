@@ -411,10 +411,16 @@ impl ThreadedSuperShuckieCoreThread {
     fn handle_command(&mut self, command: ThreadCommand) {
         match command {
             ThreadCommand::Start => {
-                self.is_running = true;
+                if !self.is_running {
+                    self.is_running = true;
+                    self.core.unpause_timer();
+                }
             }
             ThreadCommand::Pause => {
-                self.is_running = false;
+                if self.is_running {
+                    self.is_running = false;
+                    self.core.pause_timer();
+                }
             }
             ThreadCommand::SetPokeAByteEnabled(enabled, err) => {
                 if !enabled && self.pokeabyte_integration.is_some() {
@@ -440,6 +446,9 @@ impl ThreadedSuperShuckieCoreThread {
             ThreadCommand::StartRecordingReplay(metadata) => {
                 // FIXME: error if this fails
                 self.core.start_recording_replay(metadata).expect("FAILED TO START RECORDING REPLAY OH NO");
+                if !self.is_running {
+                    self.core.pause_timer();
+                }
             }
             ThreadCommand::StopRecordingReplay(sender) => {
                 let _ = sender.send(self.core.stop_recording_replay() == Some(true));
@@ -475,6 +484,9 @@ impl ThreadedSuperShuckieCoreThread {
             ThreadCommand::AttachReplayPlayer { player, allow_mismatched, errors } => {
                 if let Err(e) = self.core.attach_replay_player(player, allow_mismatched) {
                     let _ = errors.send(e);
+                }
+                if !self.is_running {
+                    self.core.pause_timer();
                 }
             }
             ThreadCommand::DetachReplayPlayer => {

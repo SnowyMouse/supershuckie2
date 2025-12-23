@@ -88,6 +88,8 @@ private:
     QAction *resume_replay;
     QAction *play_replay;
     QAction *auto_stop_replay_on_input;
+    QAction *auto_unpause_on_input;
+    QAction *auto_pause_on_record;
 
     QLabel *current_state;
 
@@ -163,6 +165,8 @@ private slots:
     void do_toggle_pokeabyte();
     void do_toggle_stop_replay_on_input();
     void do_open_controls_settings_dialog() noexcept;
+    void do_toggle_auto_unpause_on_input();
+    void do_toggle_auto_pause_on_record();
 };
 
 class NumberedAction: public QAction {

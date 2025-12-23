@@ -244,7 +244,27 @@ void supershuckie_frontend_set_auto_stop_playback_on_input_setting(struct SuperS
 /**
  * Get the auto stop playback setting.
  */
-bool supershuckie_frontend_get_auto_stop_playback_on_input_setting(struct SuperShuckieFrontendRaw *frontend);
+bool supershuckie_frontend_get_auto_stop_playback_on_input_setting(const struct SuperShuckieFrontendRaw *frontend);
+
+/**
+ * Set the auto unpause setting.
+ */
+void supershuckie_frontend_set_auto_unpause_on_input_setting(struct SuperShuckieFrontendRaw *frontend, bool new_setting);
+
+/**
+ * Get the auto unpause setting.
+ */
+bool supershuckie_frontend_get_auto_unpause_on_input_setting(const struct SuperShuckieFrontendRaw *frontend);
+
+/**
+ * Set the auto pause on record setting.
+ */
+void supershuckie_frontend_set_auto_pause_on_record_setting(struct SuperShuckieFrontendRaw *frontend, bool new_setting);
+
+/**
+ * Get the auto pause on record setting.
+ */
+bool supershuckie_frontend_get_auto_pause_on_record_setting(const struct SuperShuckieFrontendRaw *frontend);
 
 /**
  * Get the replay playback stats, returning true if currently playing back a replay.
