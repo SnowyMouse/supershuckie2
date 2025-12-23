@@ -8,14 +8,14 @@
 
 using namespace SuperShuckie64;
 
-SuperShuckieRenderWidget::SuperShuckieRenderWidget(SuperShuckieMainWindow *parent): QGraphicsView(parent), main_window(parent) {
+GameRenderWidget::GameRenderWidget(MainWindow *parent): QGraphicsView(parent), main_window(parent) {
     this->setFrameStyle(0);
     this->setHorizontalScrollBarPolicy(Qt::ScrollBarPolicy::ScrollBarAlwaysOff);
     this->setVerticalScrollBarPolicy(Qt::ScrollBarPolicy::ScrollBarAlwaysOff);
     this->setSizePolicy(QSizePolicy::Policy::Fixed, QSizePolicy::Policy::Fixed);
 }
 
-void SuperShuckieRenderWidget::set_dimensions(unsigned width, unsigned height, unsigned scale) {
+void GameRenderWidget::set_dimensions(unsigned width, unsigned height, unsigned scale) {
     if(scale == 0) {
         scale = 1;
     }
@@ -30,7 +30,7 @@ void SuperShuckieRenderWidget::set_dimensions(unsigned width, unsigned height, u
     this->rebuild_scene();
 }
 
-void SuperShuckieRenderWidget::rebuild_scene() {
+void GameRenderWidget::rebuild_scene() {
     if(this->scene == nullptr) {
         delete this->scene;
         this->scene = nullptr;
@@ -54,16 +54,16 @@ void SuperShuckieRenderWidget::rebuild_scene() {
     this->setScene(this->scene);
 }
 
-void SuperShuckieRenderWidget::force_refresh_screen() {
+void GameRenderWidget::force_refresh_screen() {
     supershuckie_frontend_force_refresh_screens(this->main_window->frontend);
 }
 
-void SuperShuckieRenderWidget::refresh_screen(const uint32_t *pixels) {
+void GameRenderWidget::refresh_screen(const uint32_t *pixels) {
     this->pixmap.convertFromImage(QImage(reinterpret_cast<const uchar *>(pixels), this->width, this->height, QImage::Format::Format_ARGB32));
     this->pixmap_item->setPixmap(this->pixmap);
 }
 
-void SuperShuckieRenderWidget::keyPressEvent(QKeyEvent *event) {
+void GameRenderWidget::keyPressEvent(QKeyEvent *event) {
     QWidget::keyPressEvent(event);
     
     if(!event->isAutoRepeat() && this->main_window->frontend != nullptr) {
@@ -71,7 +71,7 @@ void SuperShuckieRenderWidget::keyPressEvent(QKeyEvent *event) {
     }
 }
 
-void SuperShuckieRenderWidget::keyReleaseEvent(QKeyEvent *event) {
+void GameRenderWidget::keyReleaseEvent(QKeyEvent *event) {
     QWidget::keyPressEvent(event);
 
     if(this->main_window->frontend != nullptr) {
@@ -92,19 +92,19 @@ template<typename T> static std::optional<std::filesystem::path> validate_event(
     return std::nullopt;
 }
 
-void SuperShuckieRenderWidget::dragEnterEvent(QDragEnterEvent *event) {
+void GameRenderWidget::dragEnterEvent(QDragEnterEvent *event) {
     if(validate_event(event)) {
         event->accept();
     }
 }
 
-void SuperShuckieRenderWidget::dragMoveEvent(QDragMoveEvent *event) {
+void GameRenderWidget::dragMoveEvent(QDragMoveEvent *event) {
     if(validate_event(event)) {
         event->accept();
     }
 }
 
-void SuperShuckieRenderWidget::dropEvent(QDropEvent *event) {
+void GameRenderWidget::dropEvent(QDropEvent *event) {
     auto path = validate_event(event);
     if(path) {
         this->main_window->load_rom(*path);

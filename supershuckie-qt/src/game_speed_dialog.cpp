@@ -16,7 +16,7 @@ static void fixup_box(QSpinBox *spinbox) {
     spinbox->setSingleStep(25);
 }
 
-SuperShuckieGameSpeedDialog::SuperShuckieGameSpeedDialog(SuperShuckieMainWindow *parent): QDialog(parent), parent(parent) {
+GameSpeedDialog::GameSpeedDialog(MainWindow *parent): QDialog(parent), parent(parent) {
     this->setWindowTitle("Change game speed");
 
     double turbo = 0.0;
@@ -68,7 +68,7 @@ SuperShuckieGameSpeedDialog::SuperShuckieGameSpeedDialog(SuperShuckieMainWindow 
     this->setFixedSize(this->sizeHint());
 }
 
-void SuperShuckieGameSpeedDialog::accept() {
+void GameSpeedDialog::accept() {
     supershuckie_frontend_set_speed_settings(
         this->parent->frontend,
         static_cast<double>(this->base_speed_slider->value()) / 100.0,
@@ -77,7 +77,7 @@ void SuperShuckieGameSpeedDialog::accept() {
     QDialog::accept();
 }
 
-void SuperShuckieGameSpeedDialog::do_update_speed() {
+void GameSpeedDialog::do_update_speed() {
     char fmt[256];
 
     double base_speed = 60.0 * this->base_speed_slider->value() / 100.0;

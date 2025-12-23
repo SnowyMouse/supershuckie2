@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
 
     QApplication app(argc, argv);
 
-    SuperShuckie64::SuperShuckieMainWindow window;
+    SuperShuckie64::MainWindow window;
     window.show();
 
     if(argc == 2) {

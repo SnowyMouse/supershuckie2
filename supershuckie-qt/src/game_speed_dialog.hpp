@@ -8,14 +8,14 @@ class QLabel;
 
 namespace SuperShuckie64 {
 
-class SuperShuckieMainWindow;
+class MainWindow;
 
-class SuperShuckieGameSpeedDialog: public QDialog {
+class GameSpeedDialog: public QDialog {
     Q_OBJECT
-    friend SuperShuckieMainWindow;
+    friend MainWindow;
 private:
-    SuperShuckieGameSpeedDialog(SuperShuckieMainWindow *parent);
-    SuperShuckieMainWindow *parent;
+    GameSpeedDialog(MainWindow *parent);
+    MainWindow *parent;
     QSpinBox *base_speed_slider;
     QSpinBox *turbo_speed_slider;
     QLabel *base_speed_text;

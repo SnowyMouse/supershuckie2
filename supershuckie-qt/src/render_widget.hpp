@@ -9,17 +9,17 @@ class QGraphicsScene;
 
 namespace SuperShuckie64 {
 
-class SuperShuckieMainWindow;
+class MainWindow;
 class SuperShuckieGraphicsView;
 
-class SuperShuckieRenderWidget: public QGraphicsView {
-    friend SuperShuckieMainWindow;
+class GameRenderWidget: public QGraphicsView {
+    friend MainWindow;
 public:
     void set_dimensions(unsigned width, unsigned height, unsigned scale);
 
 private:
-    SuperShuckieRenderWidget(SuperShuckieMainWindow *parent);
-    SuperShuckieMainWindow *main_window;
+    GameRenderWidget(MainWindow *parent);
+    MainWindow *main_window;
 
     unsigned nearest_scaling = 1;
     unsigned width = 1;

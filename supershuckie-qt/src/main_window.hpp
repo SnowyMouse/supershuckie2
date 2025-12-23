@@ -15,9 +15,9 @@ class QLabel;
 
 namespace SuperShuckie64 {
 
-class SuperShuckieRenderWidget;
+class GameRenderWidget;
 class SuperShuckieNumberedAction;
-class SuperShuckieGameSpeedDialog;
+class GameSpeedDialog;
 class SuperShuckieTimestamp;
 
 enum ReplayStatus {
@@ -26,15 +26,15 @@ enum ReplayStatus {
     PlayingBack
 };
 
-class SuperShuckieMainWindow: public QMainWindow {
+class MainWindow: public QMainWindow {
     Q_OBJECT
-    friend SuperShuckieRenderWidget;
+    friend GameRenderWidget;
     friend SuperShuckieNumberedAction;
-    friend SuperShuckieGameSpeedDialog;
+    friend GameSpeedDialog;
     
 public:
-    SuperShuckieMainWindow();
-    ~SuperShuckieMainWindow();
+    MainWindow();
+    ~MainWindow();
 
     void load_rom(const std::filesystem::path &path);
 
@@ -42,7 +42,7 @@ private:
     typedef std::chrono::steady_clock clock;
 
     void set_title(const char *title = "");
-    SuperShuckieRenderWidget *render_widget;
+    GameRenderWidget *render_widget;
     SuperShuckieFrontendRaw *frontend = nullptr;
 
     QTimer ticker;
@@ -156,13 +156,13 @@ private slots:
 
 class SuperShuckieNumberedAction: public QAction {
     Q_OBJECT
-    friend SuperShuckieMainWindow;
+    friend MainWindow;
 public:
-    typedef void (SuperShuckieMainWindow::*on_activated)(std::uint8_t);
-    SuperShuckieNumberedAction(SuperShuckieMainWindow *parent, const char *text, std::uint8_t number, on_activated activated);
+    typedef void (MainWindow::*on_activated)(std::uint8_t);
+    SuperShuckieNumberedAction(MainWindow *parent, const char *text, std::uint8_t number, on_activated activated);
 private:
     std::uint8_t number;
-    SuperShuckieMainWindow *parent;
+    MainWindow *parent;
     on_activated activated_fn;
 private slots:
     void activated();
