@@ -3,6 +3,7 @@ fn main() {
     match target_os.as_str() {
         "macos" => build_shared_memory_macos(),
         "linux" => build_shared_memory_linux(),
+        "windows" => build_shared_memory_windows(),
         unknown => unimplemented!("Poke-A-Byte integration for target_os '{unknown}' is not implemented")
     }
 }
@@ -20,4 +21,11 @@ fn build_shared_memory_linux() {
     build.file("src/shared_memory/linux.c");
     println!("cargo::rerun-if-changed=src/shared_memory/linux.c");
     build.compile("pokeabyte_integration_shared_memory_linux");
+}
+
+fn build_shared_memory_windows() {
+    let mut build = cc::Build::new();
+    build.file("src/shared_memory/windows.c");
+    println!("cargo::rerun-if-changed=src/shared_memory/windows.c");
+    build.compile("pokeabyte_integration_shared_memory_windows");
 }

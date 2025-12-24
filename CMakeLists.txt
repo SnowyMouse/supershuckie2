@@ -7,7 +7,9 @@ project("SuperShuckie"
 
 include(corrosion.cmake)
 
-corrosion_import_crate(MANIFEST_PATH "../supershuckie-frontend-c/Cargo.toml")
+message("${CMAKE_SOURCE_DIR}/supershuckie-frontend-c/Cargo.toml")
+
+corrosion_import_crate(MANIFEST_PATH "${CMAKE_SOURCE_DIR}/supershuckie-frontend-c/Cargo.toml")
 
 set(CMAKE_AUTOMOC ON)
 
@@ -16,25 +18,22 @@ if(${WIN32})
 endif()
 
 add_library(supershuckie-cpp-static STATIC
-    src/main.cpp
-    src/main_window.cpp
-    src/render_widget.cpp
-    src/file_rw.cpp
-    src/game_speed_dialog.cpp
-    src/ask_for_text_dialog.cpp
-    src/select_item_dialog.cpp
-    src/controller_settings_window.cpp
-    src/sdl_event_wrapper.cpp
+    supershuckie-qt/src/main.cpp
+    supershuckie-qt/src/main_window.cpp
+    supershuckie-qt/src/render_widget.cpp
+    supershuckie-qt/src/file_rw.cpp
+    supershuckie-qt/src/game_speed_dialog.cpp
+    supershuckie-qt/src/ask_for_text_dialog.cpp
+    supershuckie-qt/src/select_item_dialog.cpp
+    supershuckie-qt/src/controller_settings_window.cpp
+    supershuckie-qt/src/sdl_event_wrapper.cpp
 )
 
 set_property(TARGET supershuckie-cpp-static PROPERTY CXX_STANDARD 20)
 
 target_include_directories(supershuckie-cpp-static
-    PRIVATE "${CMAKE_SOURCE_DIR}/../supershuckie-frontend-c/include"
+    PRIVATE "${CMAKE_SOURCE_DIR}/supershuckie-frontend-c/include"
 )
-
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
-find_package(SDL3 REQUIRED CONFIG REQUIRED COMPONENTS SDL3)
 
 target_link_libraries(supershuckie-cpp-static
     PUBLIC Qt6::Widgets
@@ -43,9 +42,8 @@ target_link_libraries(supershuckie-cpp-static
     PUBLIC supershuckie_frontend_c
 )
 
-if(${WIN32})
-    target_link_libraries(supershuckie-cpp-static PUBLIC dwmapi)
-endif()
+find_package(SDL3 REQUIRED CONFIG REQUIRED COMPONENTS SDL3)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 
 add_executable(supershuckie-debug)
 target_link_libraries(supershuckie-debug supershuckie-cpp-static)
@@ -68,6 +66,9 @@ if(${APPLE})
     )
 elseif(${WIN32})
     add_executable(supershuckie WIN32)
+    set_target_properties(supershuckie
+        OUTPUT_NAME "SuperShuckie"
+    )
 else()
     set_target_properties(supershuckie-debug
         OUTPUT_NAME "supershuckie"

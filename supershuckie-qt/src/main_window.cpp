@@ -10,6 +10,11 @@
 #include <QStandardPaths>
 #include <QDesktopServices>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <dwmapi.h>
+#endif
+
 #include <supershuckie/supershuckie.h>
 
 #include "ask_for_text_dialog.hpp"
