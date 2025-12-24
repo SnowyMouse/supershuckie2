@@ -24,6 +24,7 @@ add_library(supershuckie-cpp-static STATIC
     src/ask_for_text_dialog.cpp
     src/select_item_dialog.cpp
     src/controller_settings_window.cpp
+    src/sdl_event_wrapper.cpp
 )
 
 set_property(TARGET supershuckie-cpp-static PROPERTY CXX_STANDARD 20)

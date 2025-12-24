@@ -4,7 +4,7 @@ use std::num::NonZeroU8;
 use std::ptr::null;
 use std::slice::from_raw_parts_mut;
 use supershuckie_core::emulator::{ScreenData, ScreenDataEncoding};
-use supershuckie_frontend::{SuperShuckieFrontend, SuperShuckieFrontendCallbacks, UserInput};
+use supershuckie_frontend::{ConnectedControllerIndex, SuperShuckieFrontend, SuperShuckieFrontendCallbacks, UserInput};
 use supershuckie_frontend::util::UTF8CString;
 use crate::control_settings::SuperShuckieControlSettings;
 use crate::string_array::SuperShuckieStringArray;
@@ -73,6 +73,26 @@ pub unsafe extern "C" fn supershuckie_frontend_key_press(
     pressed: bool
 ) {
     frontend.on_user_input(UserInput::Keyboard { keycode }, pressed.then_some(1.0).unwrap_or(0.0));
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_button_press(
+    frontend: &mut SuperShuckieFrontend,
+    controller: ConnectedControllerIndex,
+    button: i32,
+    pressed: bool
+) {
+    frontend.on_user_input(UserInput::Button { controller, button }, pressed.then_some(1.0).unwrap_or(0.0));
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_axis(
+    frontend: &mut SuperShuckieFrontend,
+    controller: ConnectedControllerIndex,
+    axis: i32,
+    value: f64
+) {
+    frontend.on_user_input(UserInput::Axis { controller, axis }, value);
 }
 
 #[unsafe(no_mangle)]
@@ -564,4 +584,36 @@ pub unsafe extern "C" fn supershuckie_frontend_set_control_settings(
     settings: &SuperShuckieControlSettings
 ) {
     frontend.set_control_settings(settings.0.clone())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_get_connected_controllers(
+    frontend: &SuperShuckieFrontend
+) -> *mut SuperShuckieStringArray {
+    Box::into_raw(Box::new(SuperShuckieStringArray(frontend.get_connected_controllers())))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_connect_controller(
+    frontend: &mut SuperShuckieFrontend,
+    controller: *mut c_char
+) -> ConnectedControllerIndex {
+    let controller_name = unsafe { CStr::from_ptr(controller).to_str().expect("controller name not UTF-8") };
+    frontend.connect_controller(controller_name)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_disconnect_controller(
+    frontend: &mut SuperShuckieFrontend,
+    controller: ConnectedControllerIndex
+) {
+    frontend.disconnect_controller(controller);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_get_name_of_controller(
+    frontend: &SuperShuckieFrontend,
+    controller: ConnectedControllerIndex
+) -> *const c_char {
+    frontend.name_of_controller_c_str(controller).map(|i| i.as_ptr()).unwrap_or(null())
 }

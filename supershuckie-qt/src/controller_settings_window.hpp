@@ -5,10 +5,12 @@
 #include <QLineEdit>
 #include <vector>
 #include <memory>
+#include <QTimer>
 
 #include <supershuckie/control_settings.h>
 
-class QLineEdit;
+class QComboBox;
+class QString;
 
 namespace SuperShuckie64 {
 
@@ -27,6 +29,11 @@ private:
     MainWindow *parent;
     std::unique_ptr<SuperShuckieControlSettingsRaw, decltype(&supershuckie_control_settings_free)> settings;
     const char *ss_device_name();
+    std::string ss_device_back;
+    QTimer ticker;
+    QComboBox *selected_device;
+    void tick();
+private slots:
     void update_textboxes();
 };
 

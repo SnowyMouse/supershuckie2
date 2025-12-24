@@ -1,6 +1,7 @@
 pub mod util;
 pub mod settings;
 
+use std::collections::BTreeMap;
 use crate::settings::*;
 use crate::util::UTF8CString;
 use std::ffi::CStr;
@@ -21,6 +22,8 @@ const SAVE_STATE_EXTENSION: &str = "save_state";
 const SAVE_DATA_EXTENSION: &str = "sav";
 const REPLAY_EXTENSION: &str = "replay";
 
+pub type ConnectedControllerIndex = u32;
+
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum SuperShuckieEmulatorType {
     GameBoy,
@@ -29,7 +32,8 @@ pub enum SuperShuckieEmulatorType {
 
 pub enum UserInput {
     Keyboard { keycode: i32 },
-    // Axis { axis: i32 }
+    Button { controller: ConnectedControllerIndex, button: i32 },
+    Axis { controller: ConnectedControllerIndex, axis: i32 }
 }
 
 pub struct SuperShuckieFrontend {
@@ -50,6 +54,8 @@ pub struct SuperShuckieFrontend {
     current_toggled_input: Option<Input>,
     current_save_state_history: Vec<Vec<u8>>,
     current_save_state_history_position: usize,
+
+    connected_controllers: BTreeMap<ConnectedControllerIndex, UTF8CString>,
 
     rom_name: Option<Arc<UTF8CString>>,
     save_file: Option<Arc<UTF8CString>>,
@@ -82,16 +88,13 @@ impl SuperShuckieFrontend {
             current_save_state_history: Vec::new(),
             current_save_state_history_position: 0,
             recording_replay_file: None,
-            pokeabyte_error: None
+            pokeabyte_error: None,
+            connected_controllers: BTreeMap::new()
         };
 
         s.unload_rom();
 
         s
-    }
-
-    pub fn get_settings(&self) -> &Settings {
-        &self.settings
     }
 
     /// Create a save state.
@@ -113,6 +116,39 @@ impl SuperShuckieFrontend {
         file.write_all(&state)
             .map_err(|e| format!("Can't write to {filename}: {e}").into())
             .map(|_| filename.into())
+    }
+
+    /// Connect a controller.
+    pub fn connect_controller(&mut self, controller_name: &str) -> ConnectedControllerIndex {
+        for i in 0..=ConnectedControllerIndex::MAX {
+            if self.connected_controllers.contains_key(&i) {
+                continue
+            }
+            self.connected_controllers.insert(i, controller_name.into());
+            return i;
+        }
+
+        panic!("Out of controller indices");
+    }
+
+    /// Get a list of all connected controllers.
+    pub fn get_connected_controllers(&self) -> Vec<UTF8CString> {
+        self.connected_controllers.iter().map(|(_,v)| v.to_owned()).collect()
+    }
+
+    /// Disconnect a controller.
+    pub fn disconnect_controller(&mut self, controller: ConnectedControllerIndex) {
+        self.connected_controllers.remove(&controller);
+    }
+
+    /// Get the name of the connected controller.
+    pub fn name_of_controller(&self, controller: ConnectedControllerIndex) -> Option<&str> {
+        self.connected_controllers.get(&controller).map(|i| i.as_str())
+    }
+
+    /// Get the name of the connected controller as a C string.
+    pub fn name_of_controller_c_str(&self, controller: ConnectedControllerIndex) -> Option<&CStr> {
+        self.connected_controllers.get(&controller).map(|i| i.as_c_str())
     }
 
     fn load_file_or_make_generic(&mut self, dir: &Path, name: Option<&str>, generic_prefix: Option<&str>, extension: &str) -> Result<(File, String, PathBuf), UTF8CString> {
@@ -291,7 +327,19 @@ impl SuperShuckieFrontend {
 
     pub fn on_user_input(&mut self, input: UserInput, value: f64) {
         let Some(control) = (match input {
-            UserInput::Keyboard { keycode } => self.settings.controls.keyboard_controls.get(&keycode).copied()
+            UserInput::Keyboard { keycode } => self.settings.controls.keyboard_controls.get(&keycode).copied(),
+            UserInput::Button { button, controller } => {
+                self.connected_controllers.get(&controller)
+                    .and_then(|i| self.settings.controls.controller_controls.get(i.as_str()))
+                    .and_then(|i| i.buttons.get(&button))
+                    .copied()
+            }
+            UserInput::Axis { axis, controller } => {
+                self.connected_controllers.get(&controller)
+                    .and_then(|i| self.settings.controls.controller_controls.get(i.as_str()))
+                    .and_then(|i| i.axis.get(&axis))
+                    .copied()
+            }
         })
         else {
             return

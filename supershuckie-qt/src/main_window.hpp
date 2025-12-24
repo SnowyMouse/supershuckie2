@@ -7,6 +7,7 @@
 #include <memory>
 #include <chrono>
 #include <supershuckie/supershuckie.h>
+#include "sdl_event_wrapper.hpp"
 
 class QMenu;
 class QAction;
@@ -22,6 +23,8 @@ class SuperShuckieTimestamp;
 class AskForTextDialog;
 class SelectItemDialog;
 class ControlsSettingsWindow;
+
+std::vector<std::string> wrap_array_std(SuperShuckieStringArrayRaw *array);
 
 enum ReplayStatus {
     NoReplay,
@@ -145,6 +148,7 @@ private:
 
     QString app_dir;
 
+    SDLEventWrapper sdl;
 
 private slots:
     void do_open_rom();

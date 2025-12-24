@@ -19,6 +19,8 @@ struct SuperShuckieControlSettingsRaw;
  */
 struct SuperShuckieFrontendRaw;
 
+typedef uint32_t SuperShuckieConnectedControllerIndex;
+
 struct SuperShuckieScreenData {
     uint32_t width;
     uint32_t height;
@@ -53,6 +55,26 @@ void supershuckie_frontend_key_press(
     struct SuperShuckieFrontendRaw *frontend,
     int32_t key_code,
     bool pressed
+);
+
+/**
+ * Set the current button value for the given controller.
+ */
+void supershuckie_frontend_button_press(
+    struct SuperShuckieFrontendRaw *frontend,
+    SuperShuckieConnectedControllerIndex controller,
+    int32_t button,
+    bool pressed
+);
+
+/**
+ * Set the current axis value for the given controller.
+ */
+void supershuckie_frontend_axis(
+    struct SuperShuckieFrontendRaw *frontend,
+    SuperShuckieConnectedControllerIndex controller,
+    int32_t axis,
+    double value
 );
 
 /**
@@ -335,15 +357,6 @@ void supershuckie_frontend_hard_reset_console(struct SuperShuckieFrontendRaw *fr
 void supershuckie_frontend_tick(struct SuperShuckieFrontendRaw *frontend);
 
 /**
- * Free the core
- *
- * Safety:
- * - frontend must either be created with supershuckie_frontend_new OR it can be null
- * - frontend, if non-null, may only be freed once
- */
-void supershuckie_frontend_free(struct SuperShuckieFrontendRaw *frontend);
-
-/**
  * Get all replays for the given rom, or the currently loaded ROM if no ROM passed in.
  *
  * This array must be freed with supershuckie_stringarray_free
@@ -375,6 +388,50 @@ SuperShuckieControlSettingsRaw *supershuckie_frontend_get_control_settings(const
  * Overwrite the control settings.
  */
 void supershuckie_frontend_set_control_settings(struct SuperShuckieFrontendRaw *frontend, const SuperShuckieControlSettingsRaw *settings);
+
+/**
+ * Get a list of all controllers.
+ *
+ * This array must be freed with supershuckie_stringarray_free
+ */
+SuperShuckieStringArrayRaw *supershuckie_frontend_get_connected_controllers(
+    struct SuperShuckieFrontendRaw *frontend
+);
+
+/**
+ * Connect a controller.
+ *
+ * Safety: The name must be a null-terminated UTF-8 string
+ */
+SuperShuckieConnectedControllerIndex supershuckie_frontend_connect_controller(
+    struct SuperShuckieFrontendRaw *frontend,
+    const char *name
+);
+
+/**
+ * Disconnect the controller at the given index.
+ */
+void supershuckie_frontend_disconnect_controller(
+    struct SuperShuckieFrontendRaw *frontend,
+    SuperShuckieConnectedControllerIndex controller
+);
+
+/**
+ * Get the name of the controller, returning null if the index is invalid.
+ */
+const char *supershuckie_frontend_get_name_of_controller(
+    const struct SuperShuckieFrontendRaw *frontend,
+    SuperShuckieConnectedControllerIndex controller
+);
+
+/**
+ * Free the core
+ *
+ * Safety:
+ * - frontend must either be created with supershuckie_frontend_new OR it can be null
+ * - frontend, if non-null, may only be freed once
+ */
+void supershuckie_frontend_free(struct SuperShuckieFrontendRaw *frontend);
 
 #ifdef __cplusplus
 }

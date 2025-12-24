@@ -1,12 +1,14 @@
 #include "controller_settings_window.hpp"
 #include "main_window.hpp"
 
+#include <SDL3/SDL.h>
 #include <QGridLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QComboBox>
 #include <QString>
 
 using namespace SuperShuckie64;
@@ -19,6 +21,15 @@ ControlsSettingsWindow::ControlsSettingsWindow(MainWindow *parent, SuperShuckieC
     const char *label = nullptr;
 
     auto *layout = new QGridLayout(this);
+    this->selected_device = new QComboBox(this);
+    this->selected_device->addItem("Keyboard");
+    
+    auto devices = wrap_array_std(supershuckie_frontend_get_connected_controllers(this->parent->frontend));
+    for(auto &d: devices) {
+        this->selected_device->addItem(d.c_str());
+    }
+    this->selected_device->setCurrentIndex(0);
+    connect(this->selected_device, SIGNAL(currentIndexChanged(int)), this, SLOT(update_textboxes()));
 
     int control_box_y_offset = 100;
     
@@ -64,8 +75,82 @@ ControlsSettingsWindow::ControlsSettingsWindow(MainWindow *parent, SuperShuckieC
     layout->addWidget(save, offset_for_remaining_things++, 0, 1, width_span);
     connect(save, SIGNAL(clicked()), this, SLOT(accept()));
 
+    layout->addWidget(this->selected_device, 0, 0, 1, width_span);
+
     this->setFixedSize(this->sizeHint());
     this->update_textboxes();
+    this->ticker.setInterval(1);
+    this->ticker.callOnTimeout(this, &ControlsSettingsWindow::tick);
+    this->ticker.start();
+}
+
+void ControlsSettingsWindow::tick() {
+    if(!this->isVisible()) {
+        return;
+    }
+
+    auto *current_device = this->ss_device_name();
+
+    while(true) {
+        auto sdl_event = this->parent->sdl.next();
+        switch(sdl_event.discriminator) {
+            case SDLEventWrapperAction::SDLEventWrapper_NoOp:
+                return;
+            case SDLEventWrapperAction::SDLEventWrapper_Quit:
+                this->reject();
+                return;
+            case SDLEventWrapperAction::SDLEventWrapper_Axis: {
+                auto &axis_event = sdl_event.axis;
+                auto *name = axis_event.controller->name.c_str();
+
+                if(current_device == nullptr || std::strcmp(current_device, name) != 0) {
+                    break;
+                }
+
+                auto axis = axis_event.axis;
+                auto value = axis_event.value;
+
+                if(value < 0.5 && value > -0.5) {
+                    break;
+                }
+
+                for(auto &box : edit_boxes) {
+                    if(box->hasFocus()) {
+                        supershuckie_control_settings_set_control_for_device(this->settings.get(), name, true, axis, box->control_type, box->control_modifier);
+                        this->update_textboxes();
+                        break;
+                    }
+                }
+
+                break;
+            }
+            case SDLEventWrapperAction::SDLEventWrapper_Button: {
+                auto &button_event = sdl_event.button;
+                auto *name = button_event.controller->name.c_str();
+
+                if(current_device == nullptr || std::strcmp(current_device, name) != 0) {
+                    break;
+                }
+
+                auto button = button_event.button;
+                auto pressed = button_event.pressed;
+
+                if(!pressed) {
+                    break;
+                }
+
+                for(auto &box : edit_boxes) {
+                    if(box->hasFocus()) {
+                        supershuckie_control_settings_set_control_for_device(this->settings.get(), name, false, button, box->control_type, box->control_modifier);
+                        this->update_textboxes();
+                        break;
+                    }
+                }
+
+                break;
+            }
+        }
+    }
 }
 
 int ControlsSettingsWindow::exec() {
@@ -83,18 +168,23 @@ ControlSettingsSetting::ControlSettingsSetting(ControlsSettingsWindow *window, S
     this->setContextMenuPolicy(Qt::NoContextMenu);
 }
 
-const char *ControlsSettingsWindow::ss_device_name() {
-    return nullptr;
-}
+// QString ControlsSettingsWindow::ss_device_name() {
+//     if(this->selected_device->currentIndex() == 0) {
+//         return "";
+//     }
+//     return this->selected_device->currentText();
+// }
 
 void ControlSettingsSetting::mousePressEvent(QMouseEvent *event) {
     auto button = event->button();
+    auto *device = this->window->ss_device_name();
 
     if(button & Qt::RightButton) {
         event->ignore();
+
         supershuckie_control_settings_clear_controls_for_device(
             this->window->settings.get(),
-            this->window->ss_device_name(),
+            device,
             this->control_type,
             this->control_modifier
         );
@@ -108,7 +198,7 @@ void ControlSettingsSetting::mousePressEvent(QMouseEvent *event) {
 void ControlSettingsSetting::keyPressEvent(QKeyEvent *event) {
     event->ignore();
 
-    const char *device = this->window->ss_device_name();
+    auto device = this->window->ss_device_name();
     if(device != nullptr) {
         return;
     }
@@ -125,11 +215,17 @@ void ControlSettingsSetting::keyPressEvent(QKeyEvent *event) {
     this->window->update_textboxes();
 }
 
+const char *ControlsSettingsWindow::ss_device_name() {
+    return this->selected_device->currentIndex() == 0 ? nullptr : this->ss_device_back.c_str();
+}
+
 void ControlsSettingsWindow::update_textboxes() {
+    this->ss_device_back = this->selected_device->currentText().toStdString();
+
     std::vector<std::int32_t> buffer_button;
     std::vector<std::int32_t> buffer_axis;
 
-    const char *device = this->ss_device_name();
+    auto *device = this->ss_device_name();
 
     for(ControlSettingsSetting *setting: this->edit_boxes) {
         auto button_len = supershuckie_control_settings_get_controls_for_device(
@@ -179,6 +275,36 @@ void ControlsSettingsWindow::update_textboxes() {
         if(device == nullptr) {
             for(auto button : buffer_button) {
                 auto name = QKeySequence(button).toString();
+                if(label.isEmpty()) {
+                    label = name;
+                }
+                else {
+                    label += ", ";
+                    label += name;
+                }
+            }
+        }
+        else {
+            for(auto button : buffer_button) {
+                auto *name = SDL_GetGamepadStringForButton(static_cast<SDL_GamepadButton>(button));
+                if(name == nullptr) {
+                    name = "???";
+                }
+
+                if(label.isEmpty()) {
+                    label = name;
+                }
+                else {
+                    label += ", ";
+                    label += name;
+                }
+            }
+            for(auto axis : buffer_axis) {
+                auto *name = SDL_GetGamepadStringForAxis(static_cast<SDL_GamepadAxis>(axis));
+                if(name == nullptr) {
+                    name = "???";
+                }
+
                 if(label.isEmpty()) {
                     label = name;
                 }

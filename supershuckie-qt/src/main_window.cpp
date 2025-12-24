@@ -155,6 +155,8 @@ MainWindow::MainWindow(): QMainWindow() {
     this->auto_stop_replay_on_input->setChecked(supershuckie_frontend_get_auto_stop_playback_on_input_setting(this->frontend));
     this->auto_unpause_on_input->setChecked(supershuckie_frontend_get_auto_unpause_on_input_setting(this->frontend));
     this->auto_pause_on_record->setChecked(supershuckie_frontend_get_auto_pause_on_record_setting(this->frontend));
+
+    this->sdl.frontend = this->frontend;
 }
 
 void MainWindow::set_title(const char *title) {
@@ -185,20 +187,34 @@ void MainWindow::refresh_title() {
 }
 
 void MainWindow::tick() {
-    SDL_Event event;
-    while(SDL_PollEvent(&event)) {
-        switch(event.type) {
-            // If we hit ctrl-c, close the window (saves)
-            case SDL_EventType::SDL_EVENT_QUIT:
+    while(true) {
+        auto sdl_event = this->sdl.next();
+        switch(sdl_event.discriminator) {
+            case SDLEventWrapperAction::SDLEventWrapper_NoOp:
+                goto break_sdl_loop;
+            case SDLEventWrapperAction::SDLEventWrapper_Quit:
                 this->close();
                 // If the window wasn't closed, warn
                 if(this->isVisible()) {
                     std::fputs("Can't close the main window. Finish what you're doing, first!\n", stderr);
                     break;
                 }
-                return;
+                else {
+                    return;
+                }
+            case SDLEventWrapperAction::SDLEventWrapper_Axis:
+                supershuckie_frontend_button_press(this->frontend, sdl_event.axis.controller->mapping, sdl_event.axis.axis, sdl_event.axis.value);
+                break;
+            case SDLEventWrapperAction::SDLEventWrapper_Button:
+                supershuckie_frontend_button_press(this->frontend, sdl_event.button.controller->mapping, sdl_event.button.button, sdl_event.button.pressed);
+                break;
         }
     }
+    break_sdl_loop:
+    for(auto &i : this->sdl.events_to_print) {
+        this->set_title(i.c_str());
+    }
+    this->sdl.events_to_print.clear();
 
     auto now = clock::now();
     auto time_since_last_second_us = std::chrono::duration_cast<std::chrono::microseconds>(now - this->second_start).count();
@@ -360,10 +376,10 @@ void MainWindow::set_up_save_states_menu() {
 void MainWindow::set_up_replays_menu() {
     this->replays_menu = this->menu_bar->addMenu("Replays");
     
-    this->record_replay = this->replays_menu->addAction("Nidooooooooooooooooooo");
+    this->record_replay = this->replays_menu->addAction("Record (unset)");
     this->resume_replay = this->replays_menu->addAction("Resume recording replay");
     this->replays_menu->addSeparator();
-    this->play_replay = this->replays_menu->addAction("NidoNidoNidoNido");
+    this->play_replay = this->replays_menu->addAction("Play (unset)");
 
     connect(this->record_replay, SIGNAL(triggered()), this, SLOT(do_record_replay()));
     connect(this->resume_replay, SIGNAL(triggered()), this, SLOT(do_resume_replay()));
@@ -449,7 +465,6 @@ void MainWindow::set_up_settings_menu() {
 
     auto *controller_settings = this->settings_menu->addAction("Controls settings...");
     connect(controller_settings, SIGNAL(triggered()), this, SLOT(do_open_controls_settings_dialog()));
-    controller_settings->setShortcut(QKeyCombination(Qt::ControlModifier, Qt::Key_A)); // FIXME: we do not want a shortcut for this; this is just for testing
     
     auto *video_scaling = this->settings_menu->addMenu("Video scaling");
     for(std::size_t i = 1; i <= MainWindow::VIDEO_SCALE_COUNT; i++) {
@@ -664,7 +679,7 @@ void MainWindow::do_record_replay() {
     this->refresh_action_states();
 }
 
-std::vector<std::string> wrap_array_std(SuperShuckieStringArrayRaw *array) {
+std::vector<std::string> SuperShuckie64::wrap_array_std(SuperShuckieStringArrayRaw *array) {
     auto ptr = std::unique_ptr<SuperShuckieStringArrayRaw, decltype(&supershuckie_stringarray_free)>(array, &supershuckie_stringarray_free);
     std::vector<std::string> q;
     std::size_t count = supershuckie_stringarray_len(ptr.get());
@@ -693,7 +708,7 @@ void MainWindow::do_load_game() {
 }
 
 void MainWindow::do_resume_replay() {
-    // FIXME
+    // TODO
     auto replays = wrap_array_std(supershuckie_frontend_get_all_replays_for_rom(this->frontend, nullptr));
 }
 
@@ -705,9 +720,7 @@ void MainWindow::do_play_replay() {
         return;
     }
 
-    // FIXME
     auto replays = wrap_array_std(supershuckie_frontend_get_all_replays_for_rom(this->frontend, nullptr));
-
     auto text = SelectItemDialog::ask(this, replays, "Select a replay", "Select a replay file to play.");
     if(text == std::nullopt) {
         return;
