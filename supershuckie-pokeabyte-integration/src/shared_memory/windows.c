@@ -43,7 +43,7 @@ uint8_t *supershuckie_pokeabyte_try_create_shared_memory(size_t len, const char 
 }
 
 void supershuckie_pokeabyte_close_shared_memory(void) {
-    if(handle == INVALID_HANDLE_VALUE) {
+    if(handle != INVALID_HANDLE_VALUE) {
         CloseHandle(handle);
         handle = INVALID_HANDLE_VALUE;
     }
