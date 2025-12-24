@@ -827,8 +827,13 @@ void MainWindow::stop_timer() {
 }
 
 void MainWindow::do_open_controls_settings_dialog() noexcept {
-    auto *settings = new ControlsSettingsWindow(this);
-    settings->exec();
+    auto *settings_struct = supershuckie_frontend_get_control_settings(this->frontend);
+    auto *settings = new ControlsSettingsWindow(this, settings_struct);
+
+    if(settings->exec() == QDialog::Accepted) {
+        supershuckie_frontend_set_control_settings(this->frontend, settings_struct);
+    }
+    
     delete settings;
 }
 

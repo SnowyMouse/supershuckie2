@@ -552,8 +552,16 @@ unsafe fn current_rom_or_null(frontend: &SuperShuckieFrontend, rom: *const c_cha
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn supershuckie_frontend_set_control_settings(
+pub unsafe extern "C" fn supershuckie_frontend_get_control_settings(
     frontend: &SuperShuckieFrontend
 ) -> *mut SuperShuckieControlSettings {
     Box::into_raw(Box::new(SuperShuckieControlSettings(frontend.get_control_settings().clone())))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn supershuckie_frontend_set_control_settings(
+    frontend: &mut SuperShuckieFrontend,
+    settings: &SuperShuckieControlSettings
+) {
+    frontend.set_control_settings(settings.0.clone())
 }

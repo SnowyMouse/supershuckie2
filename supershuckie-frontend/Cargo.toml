@@ -9,3 +9,4 @@ supershuckie-core = { workspace = true }
 supershuckie-replay-recorder = { workspace = true }
 serde_json = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }
+num_enum = { workspace = true }

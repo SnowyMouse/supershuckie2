@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 struct SuperShuckieStringArrayRaw;
+struct SuperShuckieControlSettingsRaw;
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -44,38 +45,6 @@ struct SuperShuckieFrontendRaw *supershuckie_frontend_new(
     const char *user_data_path,
     const struct SuperShuckieFrontendCallbacks *callbacks
 );
-
-enum SuperShuckieControlSettingType {
-    SuperShuckieControlSettingType_A,
-    SuperShuckieControlSettingType_B,
-    SuperShuckieControlSettingType_Start,
-    SuperShuckieControlSettingType_Select,
-    SuperShuckieControlSettingType_Up,
-    SuperShuckieControlSettingType_Down,
-    SuperShuckieControlSettingType_Left,
-    SuperShuckieControlSettingType_Right,
-    SuperShuckieControlSettingType_L,
-    SuperShuckieControlSettingType_R,
-    SuperShuckieControlSettingType_X,
-    SuperShuckieControlSettingType_Y,
-    SuperShuckieControlSettingType_Turbo,
-    SuperShuckieControlSettingType_Slow,
-    SuperShuckieControlSettingType_Reset,
-    SuperShuckieControlSettingType_Pause
-};
-
-enum SuperShuckieControlSettingModifier {
-    SuperShuckieControlSettingModifier_Normal,
-    SuperShuckieControlSettingModifier_Rapid
-};
-
-struct SuperShuckieControlSetting {
-    // SuperShuckieControlSettingType
-    uint32_t control_type;
-
-    // SuperShuckieControlSettingModifier
-    uint32_t rapid_fire;
-};
 
 /**
  * Set the current state for a keyboard key press, if any.
@@ -394,6 +363,18 @@ struct SuperShuckieStringArrayRaw *supershuckie_frontend_get_all_save_states_for
  * This array must be freed with supershuckie_stringarray_free
  */
 struct SuperShuckieStringArrayRaw *supershuckie_frontend_get_all_saves_for_rom(const struct SuperShuckieFrontendRaw *frontend, const char *rom);
+
+/**
+ * Copy the control settings.
+ *
+ * This pointer must be freed with supershuckie_control_settings_free to avoid memory leaks.
+ */
+SuperShuckieControlSettingsRaw *supershuckie_frontend_get_control_settings(const struct SuperShuckieFrontendRaw *frontend);
+
+/**
+ * Overwrite the control settings.
+ */
+void supershuckie_frontend_set_control_settings(struct SuperShuckieFrontendRaw *frontend, const SuperShuckieControlSettingsRaw *settings);
 
 #ifdef __cplusplus
 }

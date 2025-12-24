@@ -3,5 +3,6 @@
 
 #include "string_array.h"
 #include "frontend.h"
+#include "control_settings.h"
 
 #endif

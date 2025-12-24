@@ -458,6 +458,7 @@ dependencies = [
 name = "supershuckie-frontend"
 version = "0.1.0"
 dependencies = [
+ "num_enum",
  "serde",
  "serde_json",
  "supershuckie-core",

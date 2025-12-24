@@ -6,6 +6,7 @@ use std::hint::unreachable_unchecked;
 use std::io::{Read, Seek, SeekFrom};
 use std::num::{NonZeroU64, NonZeroU8, NonZeroUsize};
 use std::path::Path;
+use num_enum::TryFromPrimitive;
 use serde::{Deserialize, Serialize};
 use supershuckie_core::emulator::Input;
 use supershuckie_replay_recorder::replay_file::record::ReplayFileRecorderSettings;
@@ -195,10 +196,12 @@ pub enum GameBoyMode {
     AlwaysGB
 }
 
+pub type ControlMap = BTreeMap<i32, ControlSetting>;
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Controls {
     #[serde(default = "BTreeMap::default")]
-    pub keyboard_controls: BTreeMap<i32, ControlSetting>,
+    pub keyboard_controls: ControlMap,
 
     #[serde(default = "BTreeMap::default")]
     pub controller_controls: BTreeMap<String, ControllerSettings>
@@ -236,13 +239,13 @@ impl Default for Controls {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct ControllerSettings {
     #[serde(default = "BTreeMap::default")]
-    pub buttons: BTreeMap<i32, ControlSetting>,
+    pub buttons: ControlMap,
 
     #[serde(default = "BTreeMap::default")]
-    pub axis: BTreeMap<i32, ControlSetting>,
+    pub axis: ControlMap,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -253,7 +256,25 @@ pub struct ControlSetting {
     pub modifier: ControlModifier
 }
 
-#[derive(Copy, Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
+// FIXME: Determine if we need this. If not, get rid of it!
+impl ControlSetting {
+    pub const fn as_u64(self) -> u64 {
+        let low = self.control as u64;
+        let high = self.modifier as u64;
+        low | (high << 32)
+    }
+    pub fn from_u64(u: u64) -> Option<Self> {
+        let low = u as u32;
+        let high = (u >> 32) as u32;
+
+        let control = Control::try_from(low).ok()?;
+        let modifier = ControlModifier::try_from(high).ok()?;
+
+        Some(Self { control, modifier })
+    }
+}
+
+#[derive(Copy, Clone, Default, Debug, PartialEq, Serialize, Deserialize, TryFromPrimitive)]
 #[repr(u32)]
 #[serde(rename_all = "snake_case")]
 pub enum ControlModifier {
@@ -267,21 +288,40 @@ impl ControlModifier {
     fn is_default(&self) -> bool {
         self == &ControlModifier::Normal
     }
+
+    #[inline]
+    pub const fn as_str(self) -> &'static str {
+        let cstr = self.as_c_str();
+        let Ok(str) = cstr.to_str() else {
+            // SAFETY: Trust me bro.
+            unsafe { unreachable_unchecked() }
+        };
+        str
+    }
+
+    pub const fn as_c_str(self) -> &'static CStr {
+        match self {
+            ControlModifier::Normal => c"Normal",
+            ControlModifier::Rapid => c"Rapid Fire",
+            ControlModifier::Toggle => c"Toggle"
+        }
+    }
+
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize, TryFromPrimitive)]
 #[repr(u32)]
 #[serde(rename_all = "snake_case")]
 pub enum Control {
-    A,
-    B,
-    Start,
-    Select,
-
     Up,
     Down,
     Left,
     Right,
+
+    A,
+    B,
+    Start,
+    Select,
 
     L,
     R,
@@ -367,19 +407,19 @@ impl Control {
         match self {
             Control::A => c"A",
             Control::B => c"B",
-            Control::Start => c"start",
-            Control::Select => c"select",
-            Control::Up => c"up",
-            Control::Down => c"down",
-            Control::Left => c"left",
-            Control::Right => c"right",
+            Control::Start => c"Start",
+            Control::Select => c"Select",
+            Control::Up => c"D-Up",
+            Control::Down => c"D-Down",
+            Control::Left => c"D-Left",
+            Control::Right => c"D-Right",
             Control::L => c"L",
             Control::R => c"R",
             Control::X => c"X",
             Control::Y => c"Y",
-            Control::Turbo => c"turbo",
-            Control::Reset => c"reset",
-            Control::Pause => c"pause"
+            Control::Turbo => c"Turbo",
+            Control::Reset => c"Reset console",
+            Control::Pause => c"Pause"
         }
     }
 }
