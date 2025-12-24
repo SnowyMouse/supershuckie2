@@ -23,6 +23,10 @@ ControlsSettingsWindow::ControlsSettingsWindow(MainWindow *parent, SuperShuckieC
     int control_box_y_offset = 100;
     
     for(control_types = 0; (label = supershuckie_control_settings_control_name(control_types)) != nullptr; control_types++) {
+        if(supershuckie_control_settings_control_is_spoiler(control_types)) {
+            continue;
+        }
+        
         auto *name = new QLabel(label, this);
         layout->addWidget(name, control_box_y_offset + control_types + 1, 0);
     }
@@ -36,6 +40,9 @@ ControlsSettingsWindow::ControlsSettingsWindow(MainWindow *parent, SuperShuckieC
 
         for(SuperShuckieControlType control_type = 0; control_type < control_types; control_type++) {
             if(!supershuckie_control_settings_control_is_button(control_type) && control_modifiers != 0) {
+                continue;
+            }
+            if(supershuckie_control_settings_control_is_spoiler(control_type)) {
                 continue;
             }
 

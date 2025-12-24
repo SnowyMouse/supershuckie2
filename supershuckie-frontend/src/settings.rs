@@ -330,6 +330,17 @@ impl Control {
         }
     }
 
+    /// Return true if this button spoils something.
+    pub const fn is_spoiler(self) -> bool {
+        match self {
+            Control::L => true,
+            Control::R => true,
+            Control::X => true,
+            Control::Y => true,
+            _ => false
+        }
+    }
+
     pub(crate) const fn set_for_input(&self, input: &mut Input, value: bool) {
         match self {
             Control::A => input.a = value,
