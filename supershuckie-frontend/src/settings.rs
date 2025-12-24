@@ -210,30 +210,7 @@ pub struct Controls {
 impl Default for Controls {
     fn default() -> Self {
         Self {
-            // FIXME: we do not want any default keyboard controls once we have custom controls
-            keyboard_controls: {
-                [
-                    (b'A' as i32, ControlSetting { control: Control::A, modifier: ControlModifier::Normal }),
-                    (b'S' as i32, ControlSetting { control: Control::B, modifier: ControlModifier::Normal }),
-                    (b'Z' as i32, ControlSetting { control: Control::A, modifier: ControlModifier::Rapid }),
-                    (b'X' as i32, ControlSetting { control: Control::B, modifier: ControlModifier::Rapid }),
-                    (b'D' as i32, ControlSetting { control: Control::X, modifier: ControlModifier::Normal }),
-                    (b'F' as i32, ControlSetting { control: Control::Y, modifier: ControlModifier::Normal }),
-                    (b'Q' as i32, ControlSetting { control: Control::L, modifier: ControlModifier::Normal }),
-                    (b'W' as i32, ControlSetting { control: Control::R, modifier: ControlModifier::Normal }),
-                    (b' ' as i32, ControlSetting { control: Control::Select, modifier: ControlModifier::Normal }),
-
-                    // Return
-                    (16777220, ControlSetting { control: Control::Start, modifier: ControlModifier::Normal }),
-
-                    // Arrow keys
-                    (16777234, ControlSetting { control: Control::Left, modifier: ControlModifier::Normal }),
-                    (16777235, ControlSetting { control: Control::Up, modifier: ControlModifier::Normal }),
-                    (16777236, ControlSetting { control: Control::Right, modifier: ControlModifier::Normal }),
-                    (16777237, ControlSetting { control: Control::Down, modifier: ControlModifier::Normal }),
-                ].into_iter().collect()
-            },
-
+            keyboard_controls: ControlMap::new(),
             controller_controls: BTreeMap::new()
         }
     }
