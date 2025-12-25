@@ -787,6 +787,8 @@ void MainWindow::do_play_replay() {
     this->playback_bar->blockSignals(false);
     this->playback_bar->show();
     this->refresh_action_states();
+
+//    supershuckie_frontend_set_playback_frame(this->frontend, 10000);
 }
 
 void MainWindow::on_refresh_screens(void *user_data, std::size_t screen_count, const uint32_t *const *pixels) {

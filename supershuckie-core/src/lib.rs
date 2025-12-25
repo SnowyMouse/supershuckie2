@@ -59,8 +59,6 @@ pub struct SuperShuckieCore {
     /// The "total" input that was actually applied.
     current_input: Input,
 
-    replay_frames_delay: UnsignedInteger,
-
     mid_frame: bool,
     replay_stalled: bool,
 
@@ -135,7 +133,6 @@ impl SuperShuckieCore {
             frames_per_keyframe: 0,
             total_frames: 0,
             replay_player: None,
-            replay_frames_delay: 0u64,
             replay_stalled: false,
             paused_timer_at: None,
             core: emulator_core,
@@ -145,24 +142,21 @@ impl SuperShuckieCore {
 
     /// Run the emulator core for the shortest amount of time.
     pub fn run(&mut self) {
-        if !self.replay_stalled {
-            self.before_run();
-        }
-
-        if !self.replay_stalled {
-            let time = self.core.run();
-            self.after_run(&time);
-        }
+        self.do_run_fn(EmulatorCore::run);
     }
 
     /// Run the emulator core for the shortest amount of time without any timekeeping.
     pub fn run_unlocked(&mut self) {
+        self.do_run_fn(EmulatorCore::run_unlocked);
+    }
+
+    fn do_run_fn(&mut self, run_fn: fn(&mut dyn EmulatorCore) -> RunTime) {
         if !self.replay_stalled {
             self.before_run();
         }
 
         if !self.replay_stalled {
-            let time = self.core.run_unlocked();
+            let time = run_fn(Box::as_mut(&mut self.core));
             self.after_run(&time);
         }
     }
@@ -223,10 +217,6 @@ impl SuperShuckieCore {
             return
         }
 
-        if self.replay_frames_delay != 0 {
-            return
-        }
-
         let Some(mut player) = self.replay_player.take() else {
             return
         };
@@ -241,7 +231,6 @@ impl SuperShuckieCore {
                     match n {
                         Packet::NoOp => {}
                         Packet::NextFrame { timestamp_delta } => {
-                            self.replay_frames_delay = 1;
                             self.total_milliseconds = self.total_milliseconds.wrapping_add(*timestamp_delta);
                             break;
                         }
@@ -255,10 +244,9 @@ impl SuperShuckieCore {
                             self.set_speed(*speed);
                         }
                         Packet::ResetConsole => {
-                            self.hard_reset();
+                            self.core.hard_reset();
                         }
                         Packet::LoadSaveState { state } => {
-                            self.mid_frame = false;
                             let _ = self.core.load_save_state(state.as_slice());
                         },
                         Packet::Bookmark { .. } => {}
@@ -284,8 +272,6 @@ impl SuperShuckieCore {
 
     fn after_run(&mut self, time: &RunTime) {
         self.do_frame_timekeeping(&time);
-        self.update_input();
-        self.flush_writes();
         self.push_keyframe_if_needed();
     }
 
@@ -316,11 +302,14 @@ impl SuperShuckieCore {
         self.next_input = Some(input);
     }
 
-    /// Enqueue an input for the next frame.
+    /// Do a hard reset.
     pub fn hard_reset(&mut self) {
+        if self.replay_player.is_some() {
+            return;
+        }
+        self.finish_current_frame();
         self.core.hard_reset();
-        self.with_recorder(|recorder| recorder.reset_console());
-        self.mid_frame = false;
+        self.with_recorder(|r| r.reset_console());
     }
 
     /// Set the current rapid fire input.
@@ -509,13 +498,11 @@ impl SuperShuckieCore {
     fn do_frame_timekeeping(&mut self, time: &RunTime) {
         self.frames_since_last_keyframe += time.frames;
         self.total_frames = self.total_frames.wrapping_add(time.frames);
-        self.replay_frames_delay = self.replay_frames_delay.saturating_sub(time.frames);
+        self.mid_frame = time.frames == 0;
 
         if let Some(rapid_fire) = self.rapid_fire_input.as_mut() {
             rapid_fire.current_frame = rapid_fire.current_frame.wrapping_add(1) % rapid_fire.total_frames;
         }
-
-        self.mid_frame = time.frames == 0;
 
         if self.replay_player.is_none() && !self.mid_frame {
             let ms = self.timestamp_provider.get_timestamp() - self.starting_milliseconds;
@@ -538,9 +525,9 @@ impl SuperShuckieCore {
 
         self.frames_since_last_keyframe = 0;
         let ms = self.total_milliseconds;
-        let save_state = Some(ByteVec::Heap(self.core.create_save_state()));
+        let save_state = ByteVec::Heap(self.core.create_save_state());
         self.with_recorder(|f| {
-            let _ = f.insert_keyframe(save_state.unwrap(), ms);
+            let _ = f.insert_keyframe(save_state, ms);
         });
     }
 
@@ -637,12 +624,12 @@ impl SuperShuckieCore {
         let speed = metadata.speed;
 
         self.core.load_save_state(state.as_slice()).expect("replay file is broken (can't load save state) and error handling not yet implemented!");
-        self.core.set_input_encoded(metadata.input.as_slice());
 
         self.mid_frame = false;
         self.total_frames = metadata.elapsed_frames;
-        self.replay_stalled = false;
         self.total_milliseconds = metadata.elapsed_millis;
+        self.replay_stalled = false;
+        self.frames_since_last_keyframe = 0;
 
         self.set_speed(speed);
 

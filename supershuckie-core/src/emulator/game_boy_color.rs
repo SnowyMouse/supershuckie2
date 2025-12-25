@@ -41,11 +41,11 @@ impl GameBoyColor {
         model: Model
     ) -> Self {
         let mut core = Gameboy::new(model);
+        core.set_rtc_mode(RtcMode::Accurate);
         core.load_boot_rom(bios);
         core.load_rom(rom);
         core.set_rgb_encoder(encode_a8r8g8b8);
         core.set_rendering_enabled(true);
-        core.set_rtc_mode(RtcMode::Accurate);
 
         let dimensions = core.get_pixel_buffer();
         let screen_data = ScreenData {
