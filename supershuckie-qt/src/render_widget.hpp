@@ -18,7 +18,7 @@ public:
     void set_dimensions(unsigned width, unsigned height, unsigned scale);
 
 private:
-    GameRenderWidget(MainWindow *parent);
+    GameRenderWidget(MainWindow *window, QWidget *parent);
     MainWindow *main_window;
 
     unsigned nearest_scaling = 1;

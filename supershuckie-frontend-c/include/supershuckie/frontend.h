@@ -258,6 +258,11 @@ void supershuckie_frontend_set_auto_pause_on_record_setting(struct SuperShuckieF
 bool supershuckie_frontend_get_auto_pause_on_record_setting(const struct SuperShuckieFrontendRaw *frontend);
 
 /**
+ * Set the current frame for playback.
+ */
+void supershuckie_frontend_set_playback_frame(struct SuperShuckieFrontendRaw *frontend, uint32_t frame);
+
+/**
  * Get the replay playback stats, returning true if currently playing back a replay.
  *
  * total_frames and total_milliseconds, if non-null, will be written their respective values.

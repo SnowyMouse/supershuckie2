@@ -8,7 +8,7 @@
 
 using namespace SuperShuckie64;
 
-GameRenderWidget::GameRenderWidget(MainWindow *parent): QGraphicsView(parent), main_window(parent) {
+GameRenderWidget::GameRenderWidget(MainWindow *window, QWidget *parent): QGraphicsView(parent), main_window(window) {
     this->setFrameStyle(0);
     this->setHorizontalScrollBarPolicy(Qt::ScrollBarPolicy::ScrollBarAlwaysOff);
     this->setVerticalScrollBarPolicy(Qt::ScrollBarPolicy::ScrollBarAlwaysOff);

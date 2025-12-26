@@ -237,6 +237,12 @@ impl ThreadedSuperShuckieCore {
         self.sender.send(ThreadCommand::DetachReplayPlayer)
             .expect("DetachReplayPlayer - the core thread has crashed")
     }
+
+    /// Go to the desired frame.
+    pub fn go_to_replay_frame(&self, frame: u32) {
+        self.sender.send(ThreadCommand::GoToReplayFrame(frame))
+            .expect("SetFrame - the core thread has crashed")
+    }
 }
 
 impl Drop for ThreadedSuperShuckieCore {
@@ -270,6 +276,7 @@ enum ThreadCommand {
     CreateSaveState(Sender<Vec<u8>>),
     LoadSaveState(Vec<u8>),
     SaveSRAM(Sender<Vec<u8>>),
+    GoToReplayFrame(u32),
     Close
 }
 
@@ -477,6 +484,9 @@ impl ThreadedSuperShuckieCoreThread {
             }
             ThreadCommand::SaveSRAM(sender) => {
                 let _ = sender.send(self.core.save_sram());
+            }
+            ThreadCommand::GoToReplayFrame(frame) => {
+                self.core.go_to_replay_frame(frame as u64);
             }
             ThreadCommand::Close => {
                 unreachable!("handle_command(ThreadCommand::Close) should not happen")

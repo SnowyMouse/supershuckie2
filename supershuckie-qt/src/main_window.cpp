@@ -9,6 +9,8 @@
 #include <QLabel>
 #include <QStandardPaths>
 #include <QDesktopServices>
+#include <QGridLayout>
+#include <QSlider>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -79,8 +81,20 @@ MainWindow::MainWindow(): QMainWindow() {
     DwmSetWindowAttribute(reinterpret_cast<HWND>(this->winId()), 33, &one, sizeof(one));
     #endif
 
-    this->render_widget = new GameRenderWidget(this);
-    this->setCentralWidget(this->render_widget);
+    auto *center_widget = new QWidget(this);
+    auto *layout = new QGridLayout(center_widget);
+    layout->setVerticalSpacing(0);
+    layout->setContentsMargins(0,0,0,0);
+    layout->setHorizontalSpacing(0);
+    this->setCentralWidget(center_widget);
+
+    this->render_widget = new GameRenderWidget(this, center_widget);
+    layout->addWidget(this->render_widget, 0, 0);
+
+    this->playback_bar = new QSlider(Qt::Horizontal, center_widget);
+    layout->addWidget(this->playback_bar, 1, 0);
+    connect(this->playback_bar, SIGNAL(valueChanged(int)), this, SLOT(do_change_playback_time(int)));
+    this->playback_bar->hide();
 
     this->status_bar = new QStatusBar(this);
     this->setStatusBar(this->status_bar);
@@ -243,22 +257,34 @@ void MainWindow::tick() {
         this->refresh_title();
     }
 
+    std::uint32_t total_frames = 0;
     bool is_recording = supershuckie_frontend_get_recording_replay_file(this->frontend) != nullptr;
-    bool is_playing_back = supershuckie_frontend_get_replay_playback_time(this->frontend, nullptr, nullptr);
+    bool is_playing_back = supershuckie_frontend_get_replay_playback_time(this->frontend, &total_frames, nullptr);
 
     if(is_recording || is_playing_back) {
-        std::uint32_t ms_total;
-        supershuckie_frontend_get_elapsed_time(this->frontend, nullptr, &ms_total);
+        std::uint32_t ms_total = 0;
+        std::uint32_t frames_total = 0;
+        supershuckie_frontend_get_elapsed_time(this->frontend, &frames_total, &ms_total);
         this->status_bar_time->set_timestamp(ms_total);
+
+        if(is_playing_back) {
+            if(!this->playback_bar->isSliderDown()) {
+                this->playback_bar->blockSignals(true);
+                this->playback_bar->setValue(frames_total);
+                this->playback_bar->blockSignals(false);
+            }
+            this->playback_bar->setMaximum(total_frames);
+        }
 
         this->status_bar_time->show();
         this->replay_time_shown = true;
     }
     else {
         if(this->replay_time_shown) {
-            this->status_bar_time->hide();
             this->refresh_action_states();
         }
+        this->status_bar_time->hide();
+        this->playback_bar->hide();
     }
 
     char buf[256];
@@ -748,8 +774,18 @@ void MainWindow::do_play_replay() {
         }
     }
 
+    std::uint32_t total_frames = 0;
+    if(!supershuckie_frontend_get_replay_playback_time(this->frontend, &total_frames, nullptr)) {
+        return;
+    }
+
     std::snprintf(fmt, sizeof(fmt), "Opened replay file \"%s\"", text->c_str());
     this->set_title(fmt);
+    this->playback_bar->blockSignals(true);
+    this->playback_bar->setValue(0);
+    this->playback_bar->setMaximum(total_frames);
+    this->playback_bar->blockSignals(false);
+    this->playback_bar->show();
     this->refresh_action_states();
 }
 
@@ -870,4 +906,8 @@ void MainWindow::do_toggle_auto_pause_on_record() {
 
 void MainWindow::do_open_user_dir() {
     QDesktopServices::openUrl(QUrl::fromLocalFile(this->app_dir));
+}
+
+void MainWindow::do_change_playback_time(int frames) {
+    supershuckie_frontend_set_playback_frame(this->frontend, static_cast<std::uint32_t>(frames));
 }

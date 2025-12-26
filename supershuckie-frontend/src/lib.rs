@@ -792,6 +792,12 @@ impl SuperShuckieFrontend {
         self.core.get_elapsed_frames()
     }
 
+    /// Skip to the desired frame.
+    #[inline]
+    pub fn go_to_replay_frame(&mut self, frame: u32) {
+        self.core.go_to_replay_frame(frame);
+    }
+
     /// Save the settings to disk.
     #[inline]
     pub fn write_settings(&self) {

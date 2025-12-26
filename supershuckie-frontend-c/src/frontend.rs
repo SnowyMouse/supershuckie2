@@ -556,7 +556,7 @@ pub unsafe extern "C" fn supershuckie_frontend_load_replay(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn supershuckie_frontend_stop_replay_playback(
+pub extern "C" fn supershuckie_frontend_stop_replay_playback(
     frontend: &mut SuperShuckieFrontend
 ) {
     frontend.stop_replay_playback();
@@ -572,14 +572,14 @@ unsafe fn current_rom_or_null(frontend: &SuperShuckieFrontend, rom: *const c_cha
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn supershuckie_frontend_get_control_settings(
+pub extern "C" fn supershuckie_frontend_get_control_settings(
     frontend: &SuperShuckieFrontend
 ) -> *mut SuperShuckieControlSettings {
     Box::into_raw(Box::new(SuperShuckieControlSettings(frontend.get_control_settings().clone())))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn supershuckie_frontend_set_control_settings(
+pub extern "C" fn supershuckie_frontend_set_control_settings(
     frontend: &mut SuperShuckieFrontend,
     settings: &SuperShuckieControlSettings
 ) {
@@ -587,7 +587,7 @@ pub unsafe extern "C" fn supershuckie_frontend_set_control_settings(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn supershuckie_frontend_get_connected_controllers(
+pub extern "C" fn supershuckie_frontend_get_connected_controllers(
     frontend: &SuperShuckieFrontend
 ) -> *mut SuperShuckieStringArray {
     Box::into_raw(Box::new(SuperShuckieStringArray(frontend.get_connected_controllers())))
@@ -603,7 +603,7 @@ pub unsafe extern "C" fn supershuckie_frontend_connect_controller(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn supershuckie_frontend_disconnect_controller(
+pub extern "C" fn supershuckie_frontend_disconnect_controller(
     frontend: &mut SuperShuckieFrontend,
     controller: ConnectedControllerIndex
 ) {
@@ -611,9 +611,17 @@ pub unsafe extern "C" fn supershuckie_frontend_disconnect_controller(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn supershuckie_frontend_get_name_of_controller(
+pub extern "C" fn supershuckie_frontend_get_name_of_controller(
     frontend: &SuperShuckieFrontend,
     controller: ConnectedControllerIndex
 ) -> *const c_char {
     frontend.name_of_controller_c_str(controller).map(|i| i.as_ptr()).unwrap_or(null())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_set_playback_frame(
+    frontend: &mut SuperShuckieFrontend,
+    frame: u32
+) {
+    frontend.go_to_replay_frame(frame)
 }

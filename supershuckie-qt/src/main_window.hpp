@@ -13,6 +13,7 @@ class QMenu;
 class QAction;
 class QCloseEvent;
 class QLabel;
+class QSlider;
 
 namespace SuperShuckie64 {
 
@@ -96,6 +97,8 @@ private:
 
     QLabel *current_state;
 
+    QSlider *playback_bar;
+
     QAction *use_number_row_for_quick_slots;
     QAction *show_status_bar;
     QAction *enable_pokeabyte_integration;
@@ -176,6 +179,7 @@ private slots:
     void do_toggle_auto_unpause_on_input();
     void do_toggle_auto_pause_on_record();
     void do_open_user_dir();
+    void do_change_playback_time(int frames);
 };
 
 class NumberedAction: public QAction {
