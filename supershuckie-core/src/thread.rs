@@ -345,10 +345,15 @@ impl ThreadedSuperShuckieCoreThread {
                     self.core.run();
                 }
             }
-            else {
+            else if self.core.replay_player.is_none() {
                 // unfortunately we can't just block until we're running again because we still need
                 // to handle pokeabyte writes
                 std::thread::sleep(Duration::from_millis(100));
+            }
+            else {
+                // we can't really sleep for a definite amount of time because it'll make seeking
+                // choppy
+                std::thread::yield_now();
             }
         }
 

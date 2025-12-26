@@ -162,7 +162,7 @@ MainWindow::MainWindow(): QMainWindow() {
     }
 
     const char *disable_keyboard_controls_replays = supershuckie_frontend_get_custom_setting(this->frontend, KEYBOARD_REPLAY_CONTROLS_DISABLED);
-    if(disable_keyboard_controls_replays != nullptr && disable_keyboard_controls_replays[0] == '0') {
+    if(disable_keyboard_controls_replays != nullptr && disable_keyboard_controls_replays[0] == '1') {
         this->keyboard_replay_controls->setChecked(false);
     }
 
