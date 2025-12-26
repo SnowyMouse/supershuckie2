@@ -1,3 +1,6 @@
+// FIXME: we need this to be somewhere else
+#define SUPERSHUCKIE_VERSION "0.1.0"
+
 #include <cstdio>
 #include <QLayout>
 #include <SDL3/SDL.h>
@@ -60,6 +63,7 @@ public:
         this->ds->hide();
 
         this->setFixedSize(this->sizeHint());
+        this->setMaximumHeight(this->ds->sizeHint().height());
         this->setMaximumWidth(10000);
     }
 
@@ -119,15 +123,23 @@ MainWindow::MainWindow(): QMainWindow() {
     this->status_bar = new QStatusBar(this);
     this->setStatusBar(this->status_bar);
 
+    #ifdef _WIN32
+    this->status_bar->setStyleSheet("QStatusBar::item { border: 0 }");
+    #endif
+
     this->paused_state = new QLabel("PAUSED");
+    this->paused_state->setFixedSize(this->paused_state->sizeHint());
     this->status_bar->addPermanentWidget(this->paused_state);
+    this->paused_state->hide();
 
     this->status_bar_time = new SuperShuckieTimestamp(this);
     this->status_bar->addPermanentWidget(this->status_bar_time);
     this->status_bar_time->hide();
 
-    this->current_state = new QLabel("");
+    this->current_state = new QLabel("RECORDING");
+    this->current_state->setFixedSize(this->current_state->sizeHint());
     this->status_bar->addPermanentWidget(this->current_state);
+    this->current_state->hide();
 
     this->status_bar_fps = new QLabel("999+ FPS ", this->status_bar);
     this->status_bar_fps->setFixedSize(this->status_bar_fps->sizeHint());
@@ -221,13 +233,13 @@ void MainWindow::refresh_title() {
     };
     
     if(this->status_bar->isVisible()) {
-        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s", rom_name);
+        std::snprintf(fmt, sizeof(fmt), "Super Shuckie " SUPERSHUCKIE_VERSION " - %s", rom_name);
     }
     else if(this->title_text[0] == 0) {
-        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s - %.00f FPS", rom_name, this->current_fps);
+        std::snprintf(fmt, sizeof(fmt), "Super Shuckie " SUPERSHUCKIE_VERSION " - %s - %.00f FPS", rom_name, this->current_fps);
     }
     else {
-        std::snprintf(fmt, sizeof(fmt), "Super Shuckie 2 (name TBD) - %s - %s - %.00f FPS", rom_name, this->title_text, this->current_fps);
+        std::snprintf(fmt, sizeof(fmt), "Super Shuckie " SUPERSHUCKIE_VERSION " - %s - %s - %.00f FPS", rom_name, this->title_text, this->current_fps);
     }
 
     this->setWindowTitle(fmt);
@@ -322,6 +334,13 @@ void MainWindow::tick() {
 
     supershuckie_frontend_tick(this->frontend);
     this->pause->setChecked(supershuckie_frontend_is_paused(this->frontend));
+
+    if(supershuckie_frontend_is_paused(this->frontend)) {
+        this->paused_state->show();
+    }
+    else {
+        this->paused_state->hide();
+    }
 
     if(this->last_known_replay_state != state) {
         this->refresh_action_states();
@@ -595,6 +614,7 @@ void MainWindow::refresh_action_states() {
             this->play_replay->setEnabled(false);
             this->resume_replay->setEnabled(false);
             this->current_state->setText("RECORDING");
+            this->current_state->show();
             this->record_replay->setText("Stop recording replay");
             break;
 
@@ -602,6 +622,7 @@ void MainWindow::refresh_action_states() {
             this->record_replay->setEnabled(false);
             this->resume_replay->setEnabled(false);
             this->current_state->setText("PLAYBACK");
+            this->current_state->show();
 
             // prevent loading any save states (quick_save is still allowed)
             this->redo_load_save_state->setEnabled(false);
@@ -614,18 +635,11 @@ void MainWindow::refresh_action_states() {
             break;
 
         case SuperShuckieReplayState::SuperShuckieReplayState__NoReplay:
-            this->current_state->clear();
+            this->current_state->hide();
             break;
     }
 
     this->last_known_replay_state = replay_state;
-
-    if(this->frontend != nullptr && supershuckie_frontend_is_paused(this->frontend)) {
-        this->paused_state->show();
-    }
-    else {
-        this->paused_state->hide();
-    }
 }
 
 void MainWindow::do_open_rom() {
