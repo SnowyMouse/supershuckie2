@@ -4,7 +4,7 @@ use std::fs;
 use std::fs::File;
 use std::hint::unreachable_unchecked;
 use std::io::{Read, Seek, SeekFrom};
-use std::num::{NonZeroU64, NonZeroU8, NonZeroUsize};
+use std::num::{NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize};
 use std::path::Path;
 use num_enum::TryFromPrimitive;
 use serde::{Deserialize, Serialize};
@@ -76,8 +76,11 @@ impl Settings {
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct ReplaySettings {
-    #[serde(default = "ReplaySettings::DEFAULT_MAX_BLOB_SIZE")]
-    pub max_blob_size: NonZeroUsize,
+    #[serde(default = "ReplaySettings::MAX_RECORDING_BLOB_SIZE_MB")]
+    pub max_recording_blob_size_mb: NonZeroU32,
+
+    #[serde(default = "ReplaySettings::AUTO_DECOMPRESS_REPLAYS_UPFRONT")]
+    pub auto_decompress_replays_upfront: bool,
 
     #[serde(default = "ReplaySettings::DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL")]
     pub zstd_compression_level: i32,
@@ -98,18 +101,22 @@ pub struct ReplaySettings {
 impl Default for ReplaySettings {
     fn default() -> Self {
         Self {
-            max_blob_size: Self::DEFAULT_MAX_BLOB_SIZE(),
+            max_recording_blob_size_mb: Self::MAX_RECORDING_BLOB_SIZE_MB(),
+            auto_decompress_replays_upfront: Self::AUTO_DECOMPRESS_REPLAYS_UPFRONT(),
             zstd_compression_level: Self::DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL(),
             frames_per_keyframe: Self::DEFAULT_FRAMES_PER_KEYFRAME(),
             auto_stop_playback_on_input: Self::AUTO_STOP_PLAYBACK_ON_INPUT(),
             auto_unpause_on_input: Self::AUTO_UNPAUSE_ON_INPUT(),
-            auto_pause_on_record: Self::AUTO_PAUSE_ON_RECORD()
+            auto_pause_on_record: Self::AUTO_PAUSE_ON_RECORD(),
         }
     }
 }
 
 impl ReplaySettings {
-    const DEFAULT_MAX_BLOB_SIZE: fn() -> NonZeroUsize = || unsafe { NonZeroUsize::new_unchecked(ReplayFileRecorderSettings::default().minimum_uncompressed_bytes_per_blob) };
+    const MAX_RECORDING_BLOB_SIZE_MB: fn() -> NonZeroU32 = || unsafe { NonZeroU32::new_unchecked(
+        (ReplayFileRecorderSettings::default().minimum_uncompressed_bytes_per_blob / 1024 / 1024) as u32
+    ) };
+    const AUTO_DECOMPRESS_REPLAYS_UPFRONT: fn() -> bool = || true;
     const DEFAULT_MAX_ZSTD_COMPRESSION_LEVEL: fn() -> i32 = || ReplayFileRecorderSettings::default().compression_level;
     const DEFAULT_FRAMES_PER_KEYFRAME: fn() -> NonZeroU64 = || unsafe { NonZeroU64::new_unchecked(60) };
     const AUTO_STOP_PLAYBACK_ON_INPUT: fn() -> bool = || false;

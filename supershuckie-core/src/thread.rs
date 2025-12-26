@@ -24,6 +24,7 @@ pub struct ThreadedSuperShuckieCore {
 
     frame_count: Arc<AtomicU32>,
     elapsed_milliseconds: Arc<AtomicU32>,
+    desired_replay_frame: Arc<AtomicU32>,
 
     playback_total_frames: UnsignedInteger,
     playback_total_milliseconds: UnsignedInteger,
@@ -40,11 +41,13 @@ impl ThreadedSuperShuckieCore {
         let replay_milliseconds = Arc::new(AtomicU32::new(0));
         let playback_total_frames = 0;
         let playback_total_milliseconds = 0;
+        let desired_replay_frame = Arc::new(AtomicU32::new(0xFFFFFFFF));
 
         {
             let frame_count = frame_count.clone();
             let screens = Arc::downgrade(&screens);
             let replay_milliseconds = replay_milliseconds.clone();
+            let desired_replay_frame = desired_replay_frame.clone();
             let _ = std::thread::Builder::new().name("ThreadedSuperShuckieCore".to_owned()).spawn(move || {
                 ThreadedSuperShuckieCoreThread {
                     screens,
@@ -55,6 +58,7 @@ impl ThreadedSuperShuckieCore {
                     pokeabyte_integration: None,
                     receiver,
                     sender_close,
+                    desired_replay_frame,
                     frame_count,
                     replay_milliseconds
                 }.run_thread();
@@ -68,7 +72,8 @@ impl ThreadedSuperShuckieCore {
             frame_count,
             elapsed_milliseconds: replay_milliseconds,
             playback_total_frames,
-            playback_total_milliseconds
+            playback_total_milliseconds,
+            desired_replay_frame
         }
     }
 
@@ -240,8 +245,9 @@ impl ThreadedSuperShuckieCore {
 
     /// Go to the desired frame.
     pub fn go_to_replay_frame(&self, frame: u32) {
-        self.sender.send(ThreadCommand::GoToReplayFrame(frame))
-            .expect("SetFrame - the core thread has crashed")
+        // we use an AtomicU32 instead of just directly going to a frame
+        // because we do not want to clog the queue with goto requests
+        self.desired_replay_frame.store(frame, Ordering::Relaxed);
     }
 }
 
@@ -276,7 +282,6 @@ enum ThreadCommand {
     CreateSaveState(Sender<Vec<u8>>),
     LoadSaveState(Vec<u8>),
     SaveSRAM(Sender<Vec<u8>>),
-    GoToReplayFrame(u32),
     Close
 }
 
@@ -287,6 +292,7 @@ struct ThreadedSuperShuckieCoreThread {
     screen_ready_for_copy: bool,
     frame_count: Arc<AtomicU32>,
     replay_milliseconds: Arc<AtomicU32>,
+    desired_replay_frame: Arc<AtomicU32>,
 
     core: SuperShuckieCore,
     receiver: Receiver<ThreadCommand>,
@@ -307,6 +313,7 @@ impl ThreadedSuperShuckieCoreThread {
                 continue
             }
 
+            self.go_to_desired_frame();
             self.refresh_screen_data(false);
             self.update_queued_screens();
             self.handle_pokeabyte_integration();
@@ -326,6 +333,13 @@ impl ThreadedSuperShuckieCoreThread {
         self.pokeabyte_integration = None;
 
         let _ = self.sender_close.send(());
+    }
+
+    fn go_to_desired_frame(&mut self) {
+        let frame = self.desired_replay_frame.swap(u32::MAX, Ordering::Relaxed);
+        if frame != u32::MAX {
+            self.core.go_to_replay_frame(frame as UnsignedInteger);
+        }
     }
 
     /// If the mutex was blocked, we can copy it in when it's no longer blocked.
@@ -484,9 +498,6 @@ impl ThreadedSuperShuckieCoreThread {
             }
             ThreadCommand::SaveSRAM(sender) => {
                 let _ = sender.send(self.core.save_sram());
-            }
-            ThreadCommand::GoToReplayFrame(frame) => {
-                self.core.go_to_replay_frame(frame as u64);
             }
             ThreadCommand::Close => {
                 unreachable!("handle_command(ThreadCommand::Close) should not happen")

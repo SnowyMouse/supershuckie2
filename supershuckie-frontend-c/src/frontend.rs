@@ -389,6 +389,19 @@ pub extern "C" fn supershuckie_frontend_get_auto_pause_on_record_setting(fronten
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_set_auto_decompress_replays_upfront_setting(
+    frontend: &mut SuperShuckieFrontend,
+    new_setting: bool
+) {
+    frontend.set_auto_decompress_replays_upfront_setting(new_setting);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_get_auto_decompress_replays_upfront_setting(frontend: &SuperShuckieFrontend) -> bool {
+    frontend.get_auto_decompress_replays_upfront_setting()
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn supershuckie_frontend_save_sram(
     frontend: &mut SuperShuckieFrontend,
     error: *mut u8,

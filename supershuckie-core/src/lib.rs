@@ -576,7 +576,7 @@ impl SuperShuckieCore {
         self.replay_stalled = false;
         self.restart_timer();
 
-        self.go_to_replay_frame(0);
+        self.go_to_replay_frame_inner(0, 0);
 
         Ok(())
     }
@@ -595,6 +595,10 @@ impl SuperShuckieCore {
 
     /// Seek to the given frame (if playing back).
     pub fn go_to_replay_frame(&mut self, frame: UnsignedInteger) {
+        if self.total_frames == frame {
+            return
+        }
+
         self.go_to_replay_frame_inner(frame, frame);
     }
 

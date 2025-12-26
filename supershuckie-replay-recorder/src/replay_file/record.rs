@@ -73,7 +73,7 @@ pub struct ReplayFileRecorderSettings {
 }
 
 /// Default minimum uncompressed bytes per blob
-pub const DEFAULT_MINIMUM_UNCOMPRESSED_BYTES_PER_BLOB: usize = 512 * 1024 * 1024;
+pub const DEFAULT_MINIMUM_UNCOMPRESSED_BYTES_PER_BLOB: usize = 256 * 1024 * 1024;
 
 /// Default compression level
 ///

@@ -48,6 +48,7 @@ pub struct ReplayFilePlayer {
     compressed_blobs_decompressing: BTreeMap<usize, Option<Arc<Mutex<PacketDecompressionStatus>>>>,
     compressed_blobs_finished: BTreeMap<usize, Option<Arc<Vec<Packet>>>>,
     compressed_blob_uncompressed_packet_indices: Vec<usize>,
+    cleanup_enabled: bool,
 
     next_uncompressed_packet_index: usize,
     next_compressed_packet_index: Option<usize>,
@@ -213,6 +214,7 @@ impl ReplayFilePlayer {
             compressed_blobs_finished,
             total_frame_count,
             total_millis,
+            cleanup_enabled: true,
 
             #[cfg(feature = "std")]
             threading: false
@@ -335,47 +337,47 @@ impl ReplayFilePlayer {
 
         let decompressed_packets = self.compressed_blobs_finished
             .get_mut(&blob_packet_index)
-            .expect("compressed blob not found in finished cache");
+            .expect("compressed blob should be in finished cache");
 
         let working_blob = self.compressed_blobs_decompressing
             .get_mut(&blob_packet_index)
-            .expect("compressed blob not found in working cache");
+            .expect("compressed blob should be in working cache");
 
-        if decompressed_packets.is_none() {
-            loop {
-                let Some(working_blob_ref) = working_blob.as_ref() else {
-                    // we have to decompress on the main thread. sad.
-                    let packets = decompress_compressed_blob(
-                        compressed_data.as_slice(),
-                        usize::try_from(*uncompressed_size).expect("we checked uncompressed size converting earlier")
-                    )?;
+        if decompressed_packets.is_some() {
+            return Ok(())
+        }
+
+        loop {
+            let Some(working_blob_ref) = working_blob.as_ref() else {
+                // we have to decompress on the main thread. sad.
+                let packets = decompress_compressed_blob(
+                    compressed_data.as_slice(),
+                    usize::try_from(*uncompressed_size).expect("we checked uncompressed size converting earlier")
+                )?;
+                *decompressed_packets = Some(packets);
+                return Ok(());
+            };
+
+            let status = unwrap_mutex_lock!(working_blob_ref.lock());
+            match &*status {
+                PacketDecompressionStatus::InProgress => {
+                    continue;
+                }
+                PacketDecompressionStatus::Failed { error } => {
+                    let error = error.clone();
+                    drop(status);
+                    *working_blob = None;
+                    return Err(error)
+                }
+                PacketDecompressionStatus::Decompressed { packets } => {
+                    let packets = packets.clone();
+                    drop(status);
                     *decompressed_packets = Some(packets);
-                    break;
-                };
-
-                let status = unwrap_mutex_lock!(working_blob_ref.lock());
-                match &*status {
-                    PacketDecompressionStatus::InProgress => {
-                        continue;
-                    }
-                    PacketDecompressionStatus::Failed { error } => {
-                        let error = error.clone();
-                        drop(status);
-                        *working_blob = None;
-                        return Err(error)
-                    }
-                    PacketDecompressionStatus::Decompressed { packets } => {
-                        let packets = packets.clone();
-                        drop(status);
-                        *decompressed_packets = Some(packets);
-                        *working_blob = None;
-                        break;
-                    }
+                    *working_blob = None;
+                    return Ok(());
                 }
             }
         }
-
-        Ok(())
     }
 
     /// Get the next packet in the stream.
@@ -434,20 +436,33 @@ impl ReplayFilePlayer {
         }
     }
 
+    /// Decompress all blobs.
+    pub fn decompress_all_blobs(&mut self) {
+        self.cleanup_enabled = false;
+
+        for (index, packet) in self.all_uncompressed_packets.clone().iter().enumerate() {
+            if let Packet::CompressedBlob { .. } = packet {
+                let _ = self.decompress_immediately(index);
+            }
+        }
+    }
+
     fn hint_decompress_next_blob_and_cleanup(&mut self) {
         let current_frame_index = self.next_uncompressed_packet_index;
 
-        let last_compressed_blob = self
-            .compressed_blob_uncompressed_packet_indices
-            .iter()
-            .copied()
-            .filter(|frame_index| *frame_index < current_frame_index)
-            .last();
+        if self.cleanup_enabled {
+            let last_compressed_blob = self
+                .compressed_blob_uncompressed_packet_indices
+                .iter()
+                .copied()
+                .filter(|frame_index| *frame_index < current_frame_index)
+                .last();
 
-        if let Some(last_compressed_blob_packet_index) = last_compressed_blob {
-            for i in 0..last_compressed_blob_packet_index {
-                self.compressed_blobs_finished.insert(i, None);
-                self.compressed_blobs_decompressing.insert(i, None);
+            if let Some(last_compressed_blob_packet_index) = last_compressed_blob {
+                for i in 0..last_compressed_blob_packet_index {
+                    self.compressed_blobs_finished.insert(i, None);
+                    self.compressed_blobs_decompressing.insert(i, None);
+                }
             }
         }
 
@@ -461,83 +476,95 @@ impl ReplayFilePlayer {
                 .next();
 
             if let Some(next_compressed_blob_index) = next_compressed_blob {
-                if self.compressed_blobs_finished[&next_compressed_blob_index].is_some() {
-                    return;
-                }
-
-                let q = self.compressed_blobs_decompressing
-                    .get_mut(&next_compressed_blob_index)
-                    .expect("compressed_blobs_decompressing exploded");
-
-                let Some(status) = q else {
-                    let status = Arc::new(Mutex::new(PacketDecompressionStatus::InProgress));
-                    *q = Some(status.clone());
-                    let status_ref = Arc::downgrade(&status);
-                    let packets = self.all_uncompressed_packets.clone();
-                    match std::thread::Builder::new()
-                        .name("ReplayFilePlayer-decompression-thread".to_owned())
-                        .spawn(move || {
-                            let Packet::CompressedBlob { uncompressed_size, compressed_data, .. } = packets
-                                .get(next_compressed_blob_index)
-                                .expect("failed to get packet") else {
-                                panic!("compressed blob wasn't a compressed blob NOOOOO")
-                            };
-                            let decompressed = decompress_compressed_blob(compressed_data.as_slice(), usize::try_from(*uncompressed_size).expect("we checked this could be a usize!"));
-                            let Some(r) = status_ref.upgrade() else {
-                                return
-                            };
-
-                            let mut r = unwrap_mutex_lock!(r.lock());
-
-                            match decompressed {
-                                Ok(n) => {
-                                    *r = PacketDecompressionStatus::Decompressed { packets: n }
-                                },
-                                Err(error) => {
-                                    *r = PacketDecompressionStatus::Failed { error }
-                                }
-                            }
-
-                        }) {
-                        Ok(_) => {
-                            return
-                        },
-                        Err(_) => {
-                            *q = None;
-                            return
-                        }
-                    }
-                };
-
-                let lock;
-
-                #[cfg(feature = "std")]
-                {
-                    lock = status.try_lock().ok();
-                }
-
-                #[cfg(not(feature = "std"))]
-                {
-                    lock = status.try_lock();
-                }
-
-                if let Some(f) = lock.as_ref() {
-                    match &**f {
-                        PacketDecompressionStatus::InProgress => return,
-                        PacketDecompressionStatus::Failed { .. } => return,
-                        PacketDecompressionStatus::Decompressed { packets } => {
-                            self.compressed_blobs_finished.insert(next_compressed_blob_index, Some(packets.clone()));
-                        }
-                    }
-                }
-                else {
-                    return
-                }
-
-                drop(lock);
-                *q = None;
+                self.decompress_blob_threaded(next_compressed_blob_index);
             }
         }
+    }
+
+    #[cfg(feature = "std")]
+    fn decompress_blob_threaded(&mut self, blob_index: usize) {
+        if !self.threading {
+            return;
+        }
+
+        if self.compressed_blobs_finished[&blob_index].is_some() {
+            return;
+        }
+
+        let q = self.compressed_blobs_decompressing
+            .get_mut(&blob_index)
+            .expect("compressed_blobs_decompressing exploded");
+
+        let Some(status) = q else {
+            // Not decompressed; start decompression...
+
+            let status = Arc::new(Mutex::new(PacketDecompressionStatus::InProgress));
+            *q = Some(status.clone());
+            let status_ref = Arc::downgrade(&status);
+            let packets = self.all_uncompressed_packets.clone();
+            match std::thread::Builder::new()
+                .name("ReplayFilePlayer-decompression-thread".to_owned())
+                .spawn(move || {
+                    let Packet::CompressedBlob { uncompressed_size, compressed_data, .. } = packets
+                        .get(blob_index)
+                        .expect("failed to get packet") else {
+                        panic!("compressed blob wasn't a compressed blob NOOOOO")
+                    };
+                    let decompressed = decompress_compressed_blob(compressed_data.as_slice(), usize::try_from(*uncompressed_size).expect("we checked this could be a usize!"));
+                    let Some(r) = status_ref.upgrade() else {
+                        return
+                    };
+
+                    let mut r = unwrap_mutex_lock!(r.lock());
+
+                    match decompressed {
+                        Ok(n) => {
+                            *r = PacketDecompressionStatus::Decompressed { packets: n }
+                        },
+                        Err(error) => {
+                            *r = PacketDecompressionStatus::Failed { error }
+                        }
+                    }
+
+                }) {
+                Ok(_) => {
+                    return
+                },
+                Err(_) => {
+                    *q = None;
+                    return
+                }
+            }
+        };
+
+        // Decompression was at least started at some point?
+
+        let lock;
+        #[cfg(feature = "std")]
+        {
+            lock = status.try_lock().ok();
+        }
+
+        #[cfg(not(feature = "std"))]
+        {
+            lock = status.try_lock();
+        }
+
+        if let Some(f) = lock.as_ref() {
+            match &**f {
+                PacketDecompressionStatus::InProgress => return,
+                PacketDecompressionStatus::Failed { .. } => return,
+                PacketDecompressionStatus::Decompressed { packets } => {
+                    self.compressed_blobs_finished.insert(blob_index, Some(packets.clone()));
+                }
+            }
+        }
+        else {
+            return
+        }
+
+        drop(lock);
+        *q = None;
     }
 }
 

@@ -271,9 +271,9 @@ void MainWindow::tick() {
             if(!this->playback_bar->isSliderDown()) {
                 this->playback_bar->blockSignals(true);
                 this->playback_bar->setValue(frames_total);
+                this->playback_bar->setMaximum(total_frames);
                 this->playback_bar->blockSignals(false);
             }
-            this->playback_bar->setMaximum(total_frames);
         }
 
         this->status_bar_time->show();
@@ -787,8 +787,6 @@ void MainWindow::do_play_replay() {
     this->playback_bar->blockSignals(false);
     this->playback_bar->show();
     this->refresh_action_states();
-
-//    supershuckie_frontend_set_playback_frame(this->frontend, 10000);
 }
 
 void MainWindow::on_refresh_screens(void *user_data, std::size_t screen_count, const uint32_t *const *pixels) {

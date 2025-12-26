@@ -224,12 +224,16 @@ impl SuperShuckieFrontend {
             }
         };
 
-        let player = match ReplayFilePlayer::new(file, override_errors) {
+        let mut player = match ReplayFilePlayer::new(file, override_errors) {
             Ok(n) => n,
             Err(e) => {
                 return Err(format!("Failed to parse replay {name}:\n\n{e:?}").into())
             }
         };
+
+        if self.settings.replay_settings.auto_decompress_replays_upfront {
+            player.decompress_all_blobs();
+        }
 
         if let Err(e) = self.core.attach_replay_player(player, override_errors) {
             return match e {
@@ -780,6 +784,16 @@ impl SuperShuckieFrontend {
         self.settings.replay_settings.auto_pause_on_record
     }
 
+    #[inline]
+    pub fn set_auto_decompress_replays_upfront_setting(&mut self, new_setting: bool) {
+        self.settings.replay_settings.auto_decompress_replays_upfront = new_setting;
+    }
+
+    #[inline]
+    pub fn get_auto_decompress_replays_upfront_setting(&self) -> bool {
+        self.settings.replay_settings.auto_decompress_replays_upfront
+    }
+
     /// Get the number of milliseconds elapsed.
     #[inline]
     pub fn get_elapsed_milliseconds(&self) -> u32 {
@@ -821,7 +835,7 @@ impl SuperShuckieFrontend {
             return Err("Game not running".into())
         }
 
-        let current_rom_name = self.get_current_rom_name_arc().expect("no rom name when game is running in start_replay");
+        let current_rom_name = self.get_current_rom_name_arc().expect("no rom name when game is running in start_recording_replay");
         let save_states_dir = self.get_replays_dir_for_rom(current_rom_name.as_str());
 
         let (final_file, final_replay, _) = self.load_file_or_make_generic(&save_states_dir, name, None, REPLAY_EXTENSION)?;
@@ -836,7 +850,9 @@ impl SuperShuckieFrontend {
             rom_filename: current_rom_name.to_string(),
 
             settings: ReplayFileRecorderSettings {
-                minimum_uncompressed_bytes_per_blob: self.settings.replay_settings.max_blob_size.get(),
+                minimum_uncompressed_bytes_per_blob: (self.settings.replay_settings.max_recording_blob_size_mb.get() as usize)
+                    .saturating_mul(1024)
+                    .saturating_mul(1024),
                 compression_level: self.settings.replay_settings.zstd_compression_level
             },
 
