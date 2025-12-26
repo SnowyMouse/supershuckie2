@@ -61,6 +61,8 @@ pub struct SuperShuckieFrontend {
     save_file: Option<Arc<UTF8CString>>,
     recording_replay_file: Option<ReplayFileInfo>,
 
+    paused: bool,
+
     settings: Settings
 }
 
@@ -89,6 +91,7 @@ impl SuperShuckieFrontend {
             current_save_state_history_position: 0,
             recording_replay_file: None,
             pokeabyte_error: None,
+            paused: false,
             connected_controllers: BTreeMap::new()
         };
 
@@ -409,7 +412,7 @@ impl SuperShuckieFrontend {
                     self.core.hard_reset();
                 }
                 Control::Pause => if pressed && self.is_game_running() {
-                    self.set_paused(!self.settings.emulation.paused);
+                    self.set_paused(!self.paused);
                 }
 
                 Control::A => unreachable!(),
@@ -595,7 +598,7 @@ impl SuperShuckieFrontend {
     /// Set whether or not the game is paused.
     pub fn set_paused(&mut self, paused: bool) {
         // we still want to do this for config reasons
-        self.settings.emulation.paused = paused;
+        self.paused = paused;
 
         if self.is_game_running() {
             if paused {
@@ -614,7 +617,7 @@ impl SuperShuckieFrontend {
 
     /// Get whether or not the game is manually paused
     pub fn is_paused(&self) -> bool {
-        self.settings.emulation.paused
+        self.paused
     }
 
     /// Save the SRAM.
@@ -931,7 +934,7 @@ impl SuperShuckieFrontend {
         if self.settings.pokeabyte.enabled {
             let _ = self.set_pokeabyte_enabled(true);
         }
-        if !self.settings.emulation.paused {
+        if !self.paused {
             self.core.start();
         }
     }

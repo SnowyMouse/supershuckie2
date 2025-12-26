@@ -154,9 +154,6 @@ pub struct EmulationSettings {
     #[serde(default = "EmulationSettings::DEFAULT_VIDEO_SCALE")]
     pub video_scale: NonZeroU8,
 
-    #[serde(default = "EmulationSettings::DEFAULT_PAUSED")]
-    pub paused: bool,
-
     #[serde(default = "EmulationSettings::DEFAULT_MAX_SAVE_STATE_HISTORY")]
     pub max_save_state_history: NonZeroUsize
 }
@@ -165,7 +162,6 @@ impl EmulationSettings {
     const DEFAULT_BASE_SPEED_MULTIPLIER: fn() -> f64 = || 1.0;
     const DEFAULT_TURBO_SPEED_MULTIPLIER: fn() -> f64 = || 2.0;
     const DEFAULT_VIDEO_SCALE: fn() -> NonZeroU8 = || unsafe { NonZeroU8::new_unchecked(4) };
-    const DEFAULT_PAUSED: fn() -> bool = || false;
     const DEFAULT_MAX_SAVE_STATE_HISTORY: fn() -> NonZeroUsize = || unsafe { NonZeroUsize::new_unchecked(100) };
 }
 
@@ -175,7 +171,6 @@ impl Default for EmulationSettings {
             base_speed_multiplier: EmulationSettings::DEFAULT_BASE_SPEED_MULTIPLIER(),
             turbo_speed_multiplier: EmulationSettings::DEFAULT_TURBO_SPEED_MULTIPLIER(),
             video_scale: EmulationSettings::DEFAULT_VIDEO_SCALE(),
-            paused: EmulationSettings::DEFAULT_PAUSED(),
             max_save_state_history: EmulationSettings::DEFAULT_MAX_SAVE_STATE_HISTORY()
         }
     }
