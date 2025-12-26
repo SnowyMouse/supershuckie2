@@ -43,15 +43,24 @@ public:
         layout->setContentsMargins(0,0,0,0);
 
         this->timestamp = new QLabel("99:99:99", this);
-        this->timestamp->setFixedSize(this->timestamp->sizeHint());
         this->timestamp->setAlignment(Qt::AlignRight);
 
         this->ms = new QLabel(".999", this);
         this->ms->setFixedSize(this->ms->sizeHint());
         this->ms->setAlignment(Qt::AlignLeft);
 
+        this->ds = new QLabel(".9", this);
+        this->ds->setFixedSize(this->ds->sizeHint());
+        this->ds->setAlignment(Qt::AlignLeft);
+
         layout->addWidget(this->timestamp);
         layout->addWidget(this->ms);
+        layout->addWidget(this->ds);
+
+        this->ds->hide();
+
+        this->setFixedSize(this->sizeHint());
+        this->setMaximumWidth(10000);
     }
 
     void set_timestamp(std::uint32_t ms_total) {
@@ -67,12 +76,20 @@ public:
         char timer[256];
         std::snprintf(timer, sizeof(timer), "%02d:%02d:%02d", hr, min, sec);
         this->timestamp->setText(timer);
+
         std::snprintf(timer, sizeof(timer), ".%.03d", ms);
         this->ms->setText(timer);
+
+        std::snprintf(timer, sizeof(timer), ".%.01d", ms / 100);
+        this->ds->setText(timer);
+
+        this->ms->setVisible(hr < 100);
+        this->ds->setVisible(!this->ms->isVisible());
     }
 private:
     QLabel *timestamp;
     QLabel *ms;
+    QLabel *ds;
 };
 
 MainWindow::MainWindow(): QMainWindow() {
@@ -101,6 +118,9 @@ MainWindow::MainWindow(): QMainWindow() {
 
     this->status_bar = new QStatusBar(this);
     this->setStatusBar(this->status_bar);
+
+    this->paused_state = new QLabel("PAUSED");
+    this->status_bar->addPermanentWidget(this->paused_state);
 
     this->status_bar_time = new SuperShuckieTimestamp(this);
     this->status_bar->addPermanentWidget(this->status_bar_time);
@@ -586,11 +606,15 @@ void MainWindow::refresh_action_states() {
 
         this->play_replay->setText("Stop replay");
     }
-    else if(this->frontend != nullptr && supershuckie_frontend_is_paused(this->frontend)) {
-        this->current_state->setText("PAUSED");
-    }
     else {
         this->current_state->clear();
+    }
+
+    if(this->frontend != nullptr && supershuckie_frontend_is_paused(this->frontend)) {
+        this->paused_state->show();
+    }
+    else {
+        this->paused_state->hide();
     }
 }
 

@@ -97,6 +97,7 @@ private:
     QAction *keyboard_replay_controls;
 
     QLabel *current_state;
+    QLabel *paused_state;
 
     QSlider *playback_bar;
 
