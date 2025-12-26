@@ -111,6 +111,8 @@ private:
 
     bool use_number_keys_for_quick_slots = false;
 
+    bool replay_time_shown = false;
+
     void set_up_file_menu();
     void set_up_gameplay_menu();
     void set_up_save_states_menu();

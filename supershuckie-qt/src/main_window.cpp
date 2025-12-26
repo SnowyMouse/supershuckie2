@@ -208,7 +208,7 @@ void MainWindow::tick() {
                     return;
                 }
             case SDLEventWrapperAction::SDLEventWrapper_Axis:
-                supershuckie_frontend_button_press(this->frontend, sdl_event.axis.controller->mapping, sdl_event.axis.axis, sdl_event.axis.value);
+                supershuckie_frontend_axis(this->frontend, sdl_event.axis.controller->mapping, sdl_event.axis.axis, sdl_event.axis.value);
                 break;
             case SDLEventWrapperAction::SDLEventWrapper_Button:
                 supershuckie_frontend_button_press(this->frontend, sdl_event.button.controller->mapping, sdl_event.button.button, sdl_event.button.pressed);
@@ -250,10 +250,15 @@ void MainWindow::tick() {
         std::uint32_t ms_total;
         supershuckie_frontend_get_elapsed_time(this->frontend, nullptr, &ms_total);
         this->status_bar_time->set_timestamp(ms_total);
+
         this->status_bar_time->show();
+        this->replay_time_shown = true;
     }
     else {
-        this->status_bar_time->hide();
+        if(this->replay_time_shown) {
+            this->status_bar_time->hide();
+            this->refresh_action_states();
+        }
     }
 
     char buf[256];

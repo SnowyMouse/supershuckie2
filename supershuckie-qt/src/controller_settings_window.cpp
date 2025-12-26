@@ -28,7 +28,12 @@ ControlsSettingsWindow::ControlsSettingsWindow(MainWindow *parent, SuperShuckieC
     for(auto &d: devices) {
         this->selected_device->addItem(d.c_str());
     }
-    this->selected_device->setCurrentIndex(0);
+
+    // Show the user's first controller if they have one
+    if(this->selected_device->count() > 1) {
+        this->selected_device->setCurrentIndex(1);
+    }
+
     connect(this->selected_device, SIGNAL(currentIndexChanged(int)), this, SLOT(update_textboxes()));
 
     int control_box_y_offset = 100;
@@ -285,10 +290,12 @@ void ControlsSettingsWindow::update_textboxes() {
             }
         }
         else {
+            char name_fmt[256];
             for(auto button : buffer_button) {
                 auto *name = SDL_GetGamepadStringForButton(static_cast<SDL_GamepadButton>(button));
                 if(name == nullptr) {
-                    name = "???";
+                    std::snprintf(name_fmt, sizeof(name_fmt), "Button #%d", button);
+                    name = name_fmt;
                 }
 
                 if(label.isEmpty()) {
@@ -302,7 +309,8 @@ void ControlsSettingsWindow::update_textboxes() {
             for(auto axis : buffer_axis) {
                 auto *name = SDL_GetGamepadStringForAxis(static_cast<SDL_GamepadAxis>(axis));
                 if(name == nullptr) {
-                    name = "???";
+                    std::snprintf(name_fmt, sizeof(name_fmt), "Axis #%d", axis);
+                    name = name_fmt;
                 }
 
                 if(label.isEmpty()) {
