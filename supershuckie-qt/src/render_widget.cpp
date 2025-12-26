@@ -97,6 +97,10 @@ void GameRenderWidget::keyPressEvent(QKeyEvent *event) {
                         240
                     );
                     return;
+                case Qt::Key_Up:
+                case Qt::Key_Down:
+                    // up/down arrow keys do not do anything yet
+                    return;
                 case Qt::Key_Comma:
                     if(is_paused) {
                         supershuckie_frontend_advance_playback_frames(
