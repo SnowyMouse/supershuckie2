@@ -280,9 +280,9 @@ void MainWindow::tick() {
         this->replay_time_shown = true;
     }
     else {
-        if(this->replay_time_shown) {
-            this->refresh_action_states();
-        }
+        // if(this->replay_time_shown) {
+        //     this->refresh_action_states();
+        // }
         this->status_bar_time->hide();
         this->playback_bar->hide();
     }
@@ -294,6 +294,7 @@ void MainWindow::tick() {
 
     supershuckie_frontend_tick(this->frontend);
     this->pause->setChecked(supershuckie_frontend_is_paused(this->frontend));
+    this->refresh_action_states();
 }
 
 void MainWindow::set_up_menu() {
@@ -571,6 +572,9 @@ void MainWindow::refresh_action_states() {
 
         this->play_replay->setText("Stop replay");
     }
+    else if(this->frontend != nullptr && supershuckie_frontend_is_paused(this->frontend)) {
+        this->current_state->setText("PAUSED");
+    }
     else {
         this->current_state->clear();
     }
@@ -711,8 +715,7 @@ void MainWindow::do_record_replay() {
             DISPLAY_ERROR_DIALOG("Failed to start recording replay", "%s", result);
         }
     }
-
-    this->refresh_action_states();
+    // this->refresh_action_states();
 }
 
 std::vector<std::string> SuperShuckie64::wrap_array_std(SuperShuckieStringArrayRaw *array) {
@@ -751,7 +754,7 @@ void MainWindow::do_resume_replay() {
 void MainWindow::do_play_replay() {
     if(supershuckie_frontend_get_replay_playback_time(this->frontend, nullptr, nullptr)) {
         supershuckie_frontend_stop_replay_playback(this->frontend);
-        this->refresh_action_states();
+        // this->refresh_action_states();
         this->set_title("Closed replay");
         return;
     }
@@ -786,7 +789,7 @@ void MainWindow::do_play_replay() {
     this->playback_bar->setMaximum(total_frames);
     this->playback_bar->blockSignals(false);
     this->playback_bar->show();
-    this->refresh_action_states();
+    // this->refresh_action_states();
 }
 
 void MainWindow::on_refresh_screens(void *user_data, std::size_t screen_count, const uint32_t *const *pixels) {
@@ -802,7 +805,7 @@ void MainWindow::on_change_video_mode(void *user_data, std::size_t screen_count,
     
     const SuperShuckieScreenData &first_screen = screen_data[0];
     self->render_widget->set_dimensions(first_screen.width, first_screen.height, video_scale);
-    self->refresh_action_states();
+    // self->refresh_action_states();
     self->frames_in_last_second = 0;
     self->current_fps = 0.0;
     self->second_start = clock::now();
