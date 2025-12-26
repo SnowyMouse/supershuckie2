@@ -646,3 +646,11 @@ pub extern "C" fn supershuckie_frontend_advance_playback_frames(
 ) {
     frontend.advance_playback_frames(frames)
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_set_playback_frozen(
+    frontend: &mut SuperShuckieFrontend,
+    paused: bool
+) {
+    frontend.set_playback_frozen(paused)
+}

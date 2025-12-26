@@ -95,6 +95,8 @@ MainWindow::MainWindow(): QMainWindow() {
     this->playback_bar = new QSlider(Qt::Horizontal, center_widget);
     layout->addWidget(this->playback_bar, 1, 0);
     connect(this->playback_bar, SIGNAL(valueChanged(int)), this, SLOT(do_change_playback_time(int)));
+    connect(this->playback_bar, SIGNAL(sliderPressed()), this, SLOT(do_temporarily_pause_replay()));
+    connect(this->playback_bar, SIGNAL(sliderReleased()), this, SLOT(do_temporarily_pause_replay()));
     this->playback_bar->hide();
 
     this->status_bar = new QStatusBar(this);
@@ -291,6 +293,7 @@ void MainWindow::tick() {
         // }
         this->status_bar_time->hide();
         this->playback_bar->hide();
+        this->temporarily_paused = false;
     }
 
     char buf[256];
@@ -928,4 +931,8 @@ void MainWindow::do_change_playback_time(int frames) {
 
 void MainWindow::do_toggle_replay_keyboard_controls() {
     supershuckie_frontend_set_custom_setting(this->frontend, KEYBOARD_REPLAY_CONTROLS_DISABLED, !this->keyboard_replay_controls->isChecked() ? "1" : "0");
+}
+
+void MainWindow::do_temporarily_pause_replay() {
+    supershuckie_frontend_set_playback_frozen(this->frontend, this->playback_bar->isSliderDown());
 }

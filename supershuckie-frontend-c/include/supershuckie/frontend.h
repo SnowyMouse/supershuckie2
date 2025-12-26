@@ -268,6 +268,11 @@ void supershuckie_frontend_set_playback_frame(struct SuperShuckieFrontendRaw *fr
 void supershuckie_frontend_advance_playback_frames(struct SuperShuckieFrontendRaw *frontend, int32_t delta);
 
 /**
+ * Set paused (temporarily)
+ */
+void supershuckie_frontend_set_playback_frozen(struct SuperShuckieFrontendRaw *frontend, bool paused);
+
+/**
  * Get the replay playback stats, returning true if currently playing back a replay.
  *
  * total_frames and total_milliseconds, if non-null, will be written their respective values.

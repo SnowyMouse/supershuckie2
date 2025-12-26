@@ -64,7 +64,8 @@ impl ThreadedSuperShuckieCore {
                     desired_replay_frame,
                     frame_count,
                     replay_milliseconds,
-                    delta_replay_frames
+                    delta_replay_frames,
+                    playback_frozen: false
                 }.run_thread();
             });
         }
@@ -109,6 +110,12 @@ impl ThreadedSuperShuckieCore {
     pub fn pause(&self) {
         self.sender.send(ThreadCommand::Pause)
             .expect("Pause - the core thread has crashed");
+    }
+
+    /// Pause running temporarily.
+    pub fn set_playback_frozen(&self, paused: bool) {
+        self.sender.send(ThreadCommand::SetPlaybackFrozen(paused))
+            .expect("SetPlaybackFrozen - the core thread has crashed");
     }
 
     /// Attach/detach a Poke-A-Byte integration server.
@@ -276,6 +283,7 @@ impl Drop for ThreadedSuperShuckieCore {
 enum ThreadCommand {
     Start,
     Pause,
+    SetPlaybackFrozen(bool),
     SetPokeAByteEnabled(bool, Sender<Result<(), String>>),
     StartRecordingReplay(PartialReplayRecordMetadata<File, File>),
     StopRecordingReplay(Sender<bool>),
@@ -305,6 +313,7 @@ struct ThreadedSuperShuckieCoreThread {
     replay_milliseconds: Arc<AtomicU32>,
     desired_replay_frame: Arc<AtomicU32>,
     delta_replay_frames: Arc<AtomicI32>,
+    playback_frozen: bool,
 
     core: SuperShuckieCore,
     receiver: Receiver<ThreadCommand>,
@@ -326,13 +335,15 @@ impl ThreadedSuperShuckieCoreThread {
             }
 
             self.go_to_desired_frame();
-            self.refresh_screen_data(false);
+            self.refresh_screen_data();
             self.update_queued_screens();
             self.handle_pokeabyte_integration();
             self.replay_milliseconds.store(self.core.get_recording_milliseconds() as u32, Ordering::Relaxed);
 
             if self.is_running {
-                self.core.run();
+                if !self.playback_frozen {
+                    self.core.run();
+                }
             }
             else {
                 // unfortunately we can't just block until we're running again because we still need
@@ -356,6 +367,12 @@ impl ThreadedSuperShuckieCoreThread {
         else if delta != 0 {
             self.core.go_to_replay_frame(self.core.total_frames.saturating_add_signed(delta as i64));
         }
+        else {
+            return
+        }
+
+        // We aren't really too focused on smooth playback as opposed to updating the buffer now!
+        self.force_refresh_screen_data();
     }
 
     /// If the mutex was blocked, we can copy it in when it's no longer blocked.
@@ -383,8 +400,8 @@ impl ThreadedSuperShuckieCoreThread {
     }
 
     /// Attempt to copy the screen data, or store it for later.
-    fn refresh_screen_data(&mut self, force: bool) {
-        if !force && self.is_running && self.core.mid_frame {
+    fn refresh_screen_data(&mut self) {
+        if self.is_running && self.core.mid_frame {
             return
         }
 
@@ -410,6 +427,23 @@ impl ThreadedSuperShuckieCoreThread {
         };
 
         self.core.core.swap_screen_data(out_screens_result.as_mut_slice());
+    }
+
+    fn force_refresh_screen_data(&mut self) {
+        let Some(screen_data) = self.screens.upgrade() else {
+            panic!("force_refresh_screen_data Can't get screen_data: owning thread must have crashed");
+        };
+
+        let mut out_screens = screen_data
+            .lock()
+            .expect("can't get screens mutex force_get_screen_data");
+
+        self.frame_count.store(self.core.total_frames as u32, Ordering::Relaxed);
+        self.screen_ready_for_copy = false;
+
+        for (screen_from, screen_to) in self.core.core.get_screens().iter().zip(out_screens.iter_mut()) {
+            screen_to.pixels.copy_from_slice(screen_from.pixels.as_slice());
+        }
     }
 
     /// Update RAM read/writes
@@ -511,6 +545,9 @@ impl ThreadedSuperShuckieCoreThread {
             }
             ThreadCommand::LoadSaveState(state) => {
                 self.core.load_save_state(&state);
+            }
+            ThreadCommand::SetPlaybackFrozen(paused) => {
+                self.playback_frozen = paused;
             }
             ThreadCommand::SaveSRAM(sender) => {
                 let _ = sender.send(self.core.save_sram());

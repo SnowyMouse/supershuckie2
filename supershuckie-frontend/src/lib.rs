@@ -607,6 +607,11 @@ impl SuperShuckieFrontend {
         }
     }
 
+    /// Set whether or not the game is paused temporarily.
+    pub fn set_playback_frozen(&mut self, paused: bool) {
+        self.core.set_playback_frozen(paused);
+    }
+
     /// Get whether or not the game is manually paused
     pub fn is_paused(&self) -> bool {
         self.settings.emulation.paused
@@ -811,7 +816,7 @@ impl SuperShuckieFrontend {
     pub fn go_to_replay_frame(&mut self, frame: u32) {
         self.core.go_to_replay_frame(frame);
     }
-    
+
     #[inline]
     pub fn advance_playback_frames(&mut self, delta: i32) {
         self.core.advance_playback_frames(delta)

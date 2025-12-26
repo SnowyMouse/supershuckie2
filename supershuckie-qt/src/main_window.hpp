@@ -116,6 +116,7 @@ private:
     bool use_number_keys_for_quick_slots = false;
 
     bool replay_time_shown = false;
+    bool temporarily_paused = false;
 
     void set_up_file_menu();
     void set_up_gameplay_menu();
@@ -182,6 +183,7 @@ private slots:
     void do_open_user_dir();
     void do_change_playback_time(int frames);
     void do_toggle_replay_keyboard_controls();
+    void do_temporarily_pause_replay();
 };
 
 class NumberedAction: public QAction {
