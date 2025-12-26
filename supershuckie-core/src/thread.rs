@@ -5,7 +5,7 @@ use std::borrow::ToOwned;
 use std::boxed::Box;
 use std::fs::File;
 use std::string::String;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex, TryLockError, Weak};
 use std::time::Duration;
@@ -25,6 +25,7 @@ pub struct ThreadedSuperShuckieCore {
     frame_count: Arc<AtomicU32>,
     elapsed_milliseconds: Arc<AtomicU32>,
     desired_replay_frame: Arc<AtomicU32>,
+    delta_replay_frames: Arc<AtomicI32>,
 
     playback_total_frames: UnsignedInteger,
     playback_total_milliseconds: UnsignedInteger,
@@ -41,13 +42,15 @@ impl ThreadedSuperShuckieCore {
         let replay_milliseconds = Arc::new(AtomicU32::new(0));
         let playback_total_frames = 0;
         let playback_total_milliseconds = 0;
-        let desired_replay_frame = Arc::new(AtomicU32::new(0xFFFFFFFF));
+        let desired_replay_frame = Arc::new(AtomicU32::new(u32::MAX));
+        let delta_replay_frames = Arc::new(AtomicI32::new(0));
 
         {
             let frame_count = frame_count.clone();
             let screens = Arc::downgrade(&screens);
             let replay_milliseconds = replay_milliseconds.clone();
             let desired_replay_frame = desired_replay_frame.clone();
+            let delta_replay_frames = delta_replay_frames.clone();
             let _ = std::thread::Builder::new().name("ThreadedSuperShuckieCore".to_owned()).spawn(move || {
                 ThreadedSuperShuckieCoreThread {
                     screens,
@@ -60,7 +63,8 @@ impl ThreadedSuperShuckieCore {
                     sender_close,
                     desired_replay_frame,
                     frame_count,
-                    replay_milliseconds
+                    replay_milliseconds,
+                    delta_replay_frames
                 }.run_thread();
             });
         }
@@ -73,7 +77,8 @@ impl ThreadedSuperShuckieCore {
             elapsed_milliseconds: replay_milliseconds,
             playback_total_frames,
             playback_total_milliseconds,
-            desired_replay_frame
+            desired_replay_frame,
+            delta_replay_frames
         }
     }
 
@@ -249,6 +254,12 @@ impl ThreadedSuperShuckieCore {
         // because we do not want to clog the queue with goto requests
         self.desired_replay_frame.store(frame, Ordering::Relaxed);
     }
+
+    /// Advance or go back some frames.
+    pub fn advance_playback_frames(&self, amount: i32) {
+        // similarly use AtomicI32 to avoid clogging the queue
+        self.delta_replay_frames.store(amount, Ordering::Relaxed);
+    }
 }
 
 impl Drop for ThreadedSuperShuckieCore {
@@ -293,6 +304,7 @@ struct ThreadedSuperShuckieCoreThread {
     frame_count: Arc<AtomicU32>,
     replay_milliseconds: Arc<AtomicU32>,
     desired_replay_frame: Arc<AtomicU32>,
+    delta_replay_frames: Arc<AtomicI32>,
 
     core: SuperShuckieCore,
     receiver: Receiver<ThreadCommand>,
@@ -336,9 +348,13 @@ impl ThreadedSuperShuckieCoreThread {
     }
 
     fn go_to_desired_frame(&mut self) {
+        let delta = self.delta_replay_frames.swap(0, Ordering::Relaxed);
         let frame = self.desired_replay_frame.swap(u32::MAX, Ordering::Relaxed);
         if frame != u32::MAX {
             self.core.go_to_replay_frame(frame as UnsignedInteger);
+        }
+        else if delta != 0 {
+            self.core.go_to_replay_frame(self.core.total_frames.saturating_add_signed(delta as i64));
         }
     }
 

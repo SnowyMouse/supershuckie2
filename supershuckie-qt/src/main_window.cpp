@@ -30,9 +30,10 @@
 
 using namespace SuperShuckie64;
 
-static const char *USE_NUMBER_KEYS_FOR_QUICK_SLOTS = "number_keys_for_quick_slots";
-static const char *WINDOW_XY = "window_xy";
-static const char *DISPLAY_STATUS_BAR = "display_status_bar";
+static const char *USE_NUMBER_KEYS_FOR_QUICK_SLOTS = "qt__number_keys_for_quick_slots";
+static const char *WINDOW_XY = "qt__window_xy";
+static const char *DISPLAY_STATUS_BAR = "qt__display_status_bar";
+static const char *KEYBOARD_REPLAY_CONTROLS_DISABLED = "qt__replay_controls_disabled";
 
 class SuperShuckie64::SuperShuckieTimestamp: public QWidget {
 public:
@@ -156,6 +157,11 @@ MainWindow::MainWindow(): QMainWindow() {
         this->use_number_keys_for_quick_slots = true;
         this->use_number_row_for_quick_slots->setChecked(true);
         this->set_quick_load_shortcuts();
+    }
+
+    const char *disable_keyboard_controls_replays = supershuckie_frontend_get_custom_setting(this->frontend, KEYBOARD_REPLAY_CONTROLS_DISABLED);
+    if(disable_keyboard_controls_replays != nullptr && disable_keyboard_controls_replays[0] == '0') {
+        this->keyboard_replay_controls->setChecked(false);
     }
 
     const char *xy = supershuckie_frontend_get_custom_setting(this->frontend, WINDOW_XY);
@@ -434,6 +440,11 @@ void MainWindow::set_up_replays_menu() {
     this->auto_pause_on_record = this->replays_menu->addAction("Start recordings paused");
     connect(this->auto_pause_on_record, SIGNAL(triggered()), this, SLOT(do_toggle_auto_pause_on_record()));
     this->auto_pause_on_record->setCheckable(true);
+
+    this->keyboard_replay_controls = this->replays_menu->addAction("Allow keyboard to control replay playback");
+    connect(this->keyboard_replay_controls, SIGNAL(triggered()), this, SLOT(do_toggle_replay_keyboard_controls()));
+    this->keyboard_replay_controls->setCheckable(true);
+    this->keyboard_replay_controls->setChecked(true);
 }
 
 NumberedAction::NumberedAction(MainWindow *parent, const char *text, std::uint8_t number, on_activated activated): QAction(text, parent), number(number), parent(parent), activated_fn(activated) {
@@ -913,4 +924,8 @@ void MainWindow::do_open_user_dir() {
 
 void MainWindow::do_change_playback_time(int frames) {
     supershuckie_frontend_set_playback_frame(this->frontend, static_cast<std::uint32_t>(frames));
+}
+
+void MainWindow::do_toggle_replay_keyboard_controls() {
+    supershuckie_frontend_set_custom_setting(this->frontend, KEYBOARD_REPLAY_CONTROLS_DISABLED, !this->keyboard_replay_controls->isChecked() ? "1" : "0");
 }

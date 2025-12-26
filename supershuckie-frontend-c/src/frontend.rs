@@ -638,3 +638,11 @@ pub extern "C" fn supershuckie_frontend_set_playback_frame(
 ) {
     frontend.go_to_replay_frame(frame)
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_advance_playback_frames(
+    frontend: &mut SuperShuckieFrontend,
+    frames: i32
+) {
+    frontend.advance_playback_frames(frames)
+}

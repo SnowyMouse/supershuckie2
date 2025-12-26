@@ -66,8 +66,59 @@ void GameRenderWidget::refresh_screen(const uint32_t *pixels) {
 void GameRenderWidget::keyPressEvent(QKeyEvent *event) {
     QWidget::keyPressEvent(event);
     
-    if(!event->isAutoRepeat() && this->main_window->frontend != nullptr) {
-        supershuckie_frontend_key_press(this->main_window->frontend, event->key(), true);
+    if(this->main_window->frontend != nullptr) {
+        // Replay controls
+        int key = event->key();
+        bool auto_repeat = event->isAutoRepeat();
+        bool is_paused = supershuckie_frontend_is_paused(this->main_window->frontend);
+
+        if(
+            this->main_window->keyboard_replay_controls->isChecked() && 
+            supershuckie_frontend_get_replay_playback_time(this->main_window->frontend, nullptr, nullptr)
+        ) {
+            switch(key) {
+                case Qt::Key_Space:
+                    if(!auto_repeat) {
+                        supershuckie_frontend_set_paused(
+                            this->main_window->frontend,
+                            !supershuckie_frontend_is_paused(this->main_window->frontend)
+                        );
+                    }
+                    return;
+                case Qt::Key_Left:
+                    supershuckie_frontend_advance_playback_frames(
+                        this->main_window->frontend,
+                        -240
+                    );
+                    return;
+                case Qt::Key_Right:
+                    supershuckie_frontend_advance_playback_frames(
+                        this->main_window->frontend,
+                        240
+                    );
+                    return;
+                case Qt::Key_Comma:
+                    if(is_paused) {
+                        supershuckie_frontend_advance_playback_frames(
+                            this->main_window->frontend,
+                            -1
+                        );
+                    }
+                    return;
+                case Qt::Key_Period:
+                    if(is_paused) {
+                        supershuckie_frontend_advance_playback_frames(
+                            this->main_window->frontend,
+                            1
+                        );
+                    }
+                    return;
+            }
+        }
+
+        if(!auto_repeat) {
+            supershuckie_frontend_key_press(this->main_window->frontend, key, true);
+        }
     }
 }
 

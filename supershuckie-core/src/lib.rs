@@ -599,7 +599,9 @@ impl SuperShuckieCore {
             return
         }
 
-        self.go_to_replay_frame_inner(frame, frame);
+        // go one frame before so that we play the actually desired frame (so it is rendered)
+        let before_frame = frame.saturating_sub(1);
+        self.go_to_replay_frame_inner(before_frame, before_frame);
     }
 
     fn go_to_replay_frame_inner(&mut self, frame: UnsignedInteger, desired: UnsignedInteger) {

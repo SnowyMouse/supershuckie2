@@ -94,6 +94,7 @@ private:
     QAction *auto_stop_replay_on_input;
     QAction *auto_unpause_on_input;
     QAction *auto_pause_on_record;
+    QAction *keyboard_replay_controls;
 
     QLabel *current_state;
 
@@ -180,6 +181,7 @@ private slots:
     void do_toggle_auto_pause_on_record();
     void do_open_user_dir();
     void do_change_playback_time(int frames);
+    void do_toggle_replay_keyboard_controls();
 };
 
 class NumberedAction: public QAction {

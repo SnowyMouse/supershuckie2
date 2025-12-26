@@ -811,6 +811,11 @@ impl SuperShuckieFrontend {
     pub fn go_to_replay_frame(&mut self, frame: u32) {
         self.core.go_to_replay_frame(frame);
     }
+    
+    #[inline]
+    pub fn advance_playback_frames(&mut self, delta: i32) {
+        self.core.advance_playback_frames(delta)
+    }
 
     /// Save the settings to disk.
     #[inline]
