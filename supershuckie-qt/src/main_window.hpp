@@ -105,6 +105,8 @@ private:
     QAction *show_status_bar;
     QAction *enable_pokeabyte_integration;
 
+    SuperShuckieReplayState last_known_replay_state = SuperShuckieReplayState::SuperShuckieReplayState__NoReplay;
+
     static const std::size_t QUICK_SAVE_STATE_COUNT = 9;
 
     QAction *quick_load_save_states[QUICK_SAVE_STATE_COUNT];

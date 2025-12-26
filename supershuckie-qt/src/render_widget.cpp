@@ -4,8 +4,6 @@
 #include <QKeyEvent>
 #include <QMimeData>
 
-#include <supershuckie/supershuckie.h>
-
 using namespace SuperShuckie64;
 
 GameRenderWidget::GameRenderWidget(MainWindow *window, QWidget *parent): QGraphicsView(parent), main_window(window) {
@@ -74,7 +72,7 @@ void GameRenderWidget::keyPressEvent(QKeyEvent *event) {
 
         if(
             this->main_window->keyboard_replay_controls->isChecked() && 
-            supershuckie_frontend_get_replay_playback_time(this->main_window->frontend, nullptr, nullptr)
+            supershuckie_frontend_get_replay_state(this->main_window->frontend) == SuperShuckieReplayState::SuperShuckieReplayState__Playback
         ) {
             switch(key) {
                 case Qt::Key_Space:

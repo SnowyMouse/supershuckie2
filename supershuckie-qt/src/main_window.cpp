@@ -286,17 +286,19 @@ void MainWindow::tick() {
     }
 
     std::uint32_t total_frames = 0;
-    bool is_recording = supershuckie_frontend_get_recording_replay_file(this->frontend) != nullptr;
-    bool is_playing_back = supershuckie_frontend_get_replay_playback_time(this->frontend, &total_frames, nullptr);
+    auto state = supershuckie_frontend_get_replay_state(this->frontend);
 
-    if(is_recording || is_playing_back) {
+    if(state != SuperShuckieReplayState::SuperShuckieReplayState__NoReplay) {
         std::uint32_t ms_total = 0;
         std::uint32_t frames_total = 0;
         supershuckie_frontend_get_elapsed_time(this->frontend, &frames_total, &ms_total);
         this->status_bar_time->set_timestamp(ms_total);
 
-        if(is_playing_back) {
+        if(state == SuperShuckieReplayState::SuperShuckieReplayState__Playback) {
             if(!this->playback_bar->isSliderDown()) {
+                std::uint32_t total_frames;
+                supershuckie_frontend_get_replay_playback_time(this->frontend, &total_frames, nullptr);
+
                 this->playback_bar->blockSignals(true);
                 this->playback_bar->setValue(frames_total);
                 this->playback_bar->setMaximum(total_frames);
@@ -308,9 +310,6 @@ void MainWindow::tick() {
         this->replay_time_shown = true;
     }
     else {
-        // if(this->replay_time_shown) {
-        //     this->refresh_action_states();
-        // }
         this->status_bar_time->hide();
         this->playback_bar->hide();
         this->temporarily_paused = false;
@@ -323,7 +322,10 @@ void MainWindow::tick() {
 
     supershuckie_frontend_tick(this->frontend);
     this->pause->setChecked(supershuckie_frontend_is_paused(this->frontend));
-    this->refresh_action_states();
+
+    if(this->last_known_replay_state != state) {
+        this->refresh_action_states();
+    }
 }
 
 void MainWindow::set_up_menu() {
@@ -585,30 +587,38 @@ void MainWindow::refresh_action_states() {
     this->record_replay->setEnabled(game_loaded);
     this->resume_replay->setEnabled(game_loaded);
 
-    if(this->frontend != nullptr && supershuckie_frontend_get_recording_replay_file(this->frontend) != nullptr) {
-        this->play_replay->setEnabled(false);
-        this->resume_replay->setEnabled(false);
-        this->current_state->setText("RECORDING");
+    auto replay_state = this->frontend != nullptr ?
+        supershuckie_frontend_get_replay_state(this->frontend) : SuperShuckieReplayState::SuperShuckieReplayState__NoReplay;
 
-        this->record_replay->setText("Stop recording replay");
-    }
-    else if(this->frontend != nullptr && supershuckie_frontend_get_replay_playback_time(this->frontend, nullptr, nullptr)) {
-        this->record_replay->setEnabled(false);
-        this->resume_replay->setEnabled(false);
-        this->current_state->setText("PLAYBACK");
+    switch(replay_state) {
+        case SuperShuckieReplayState::SuperShuckieReplayState__Recording:
+            this->play_replay->setEnabled(false);
+            this->resume_replay->setEnabled(false);
+            this->current_state->setText("RECORDING");
+            this->record_replay->setText("Stop recording replay");
+            break;
 
-        // prevent loading any save states (quick_save is still allowed)
-        this->redo_load_save_state->setEnabled(false);
-        this->undo_load_save_state->setEnabled(false);
-        for(auto &state : this->quick_load_save_states) {
-            state->setEnabled(false);
-        }
+        case SuperShuckieReplayState::SuperShuckieReplayState__Playback:
+            this->record_replay->setEnabled(false);
+            this->resume_replay->setEnabled(false);
+            this->current_state->setText("PLAYBACK");
 
-        this->play_replay->setText("Stop replay");
+            // prevent loading any save states (quick_save is still allowed)
+            this->redo_load_save_state->setEnabled(false);
+            this->undo_load_save_state->setEnabled(false);
+            for(auto &state : this->quick_load_save_states) {
+                state->setEnabled(false);
+            }
+
+            this->play_replay->setText("Stop replay");
+            break;
+
+        case SuperShuckieReplayState::SuperShuckieReplayState__NoReplay:
+            this->current_state->clear();
+            break;
     }
-    else {
-        this->current_state->clear();
-    }
+
+    this->last_known_replay_state = replay_state;
 
     if(this->frontend != nullptr && supershuckie_frontend_is_paused(this->frontend)) {
         this->paused_state->show();
@@ -753,7 +763,7 @@ void MainWindow::do_record_replay() {
             DISPLAY_ERROR_DIALOG("Failed to start recording replay", "%s", result);
         }
     }
-    // this->refresh_action_states();
+    this->refresh_action_states();
 }
 
 std::vector<std::string> SuperShuckie64::wrap_array_std(SuperShuckieStringArrayRaw *array) {
@@ -790,9 +800,8 @@ void MainWindow::do_resume_replay() {
 }
 
 void MainWindow::do_play_replay() {
-    if(supershuckie_frontend_get_replay_playback_time(this->frontend, nullptr, nullptr)) {
+    if(supershuckie_frontend_get_replay_state(this->frontend) != SuperShuckieReplayState::SuperShuckieReplayState__NoReplay) {
         supershuckie_frontend_stop_replay_playback(this->frontend);
-        // this->refresh_action_states();
         this->set_title("Closed replay");
         return;
     }
@@ -827,7 +836,7 @@ void MainWindow::do_play_replay() {
     this->playback_bar->setMaximum(total_frames);
     this->playback_bar->blockSignals(false);
     this->playback_bar->show();
-    // this->refresh_action_states();
+    this->refresh_action_states();
 }
 
 void MainWindow::on_refresh_screens(void *user_data, std::size_t screen_count, const uint32_t *const *pixels) {
@@ -843,7 +852,6 @@ void MainWindow::on_change_video_mode(void *user_data, std::size_t screen_count,
     
     const SuperShuckieScreenData &first_screen = screen_data[0];
     self->render_widget->set_dimensions(first_screen.width, first_screen.height, video_scale);
-    // self->refresh_action_states();
     self->frames_in_last_second = 0;
     self->current_fps = 0.0;
     self->second_start = clock::now();
@@ -857,6 +865,8 @@ void MainWindow::on_change_video_mode(void *user_data, std::size_t screen_count,
     for(auto &scale : self->change_video_scale) {
         scale->setChecked(scale->number == video_scale);
     }
+
+    self->refresh_action_states();
 }
 
 bool MainWindow::is_game_running() {

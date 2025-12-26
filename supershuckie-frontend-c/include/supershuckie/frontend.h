@@ -27,6 +27,12 @@ struct SuperShuckieScreenData {
     uint32_t encoding;
 };
 
+enum SuperShuckieReplayState {
+    SuperShuckieReplayState__NoReplay,
+    SuperShuckieReplayState__Recording,
+    SuperShuckieReplayState__Playback
+};
+
 typedef void (*SuperShuckieRefreshScreensCallback)(void *user_data, size_t screen_count, const uint32_t *const *pixels);
 typedef void (*SuperShuckieChangeVideoModeCallback)(void *user_data, size_t screen_count, const struct SuperShuckieScreenData *screen_data, uint8_t scaling);
 
@@ -438,6 +444,11 @@ const char *supershuckie_frontend_get_name_of_controller(
     const struct SuperShuckieFrontendRaw *frontend,
     SuperShuckieConnectedControllerIndex controller
 );
+
+/**
+ * Get the replay state
+ */
+enum SuperShuckieReplayState supershuckie_frontend_get_replay_state(const struct SuperShuckieFrontendRaw *frontend);
 
 /**
  * Free the core

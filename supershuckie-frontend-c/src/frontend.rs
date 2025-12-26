@@ -654,3 +654,25 @@ pub extern "C" fn supershuckie_frontend_set_playback_frozen(
 ) {
     frontend.set_playback_frozen(paused)
 }
+
+#[repr(C)]
+pub enum SuperShuckieReplayState {
+    NoReplay,
+    Recording,
+    Playback
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_get_replay_state(
+    frontend: &SuperShuckieFrontend
+) -> SuperShuckieReplayState {
+    if frontend.get_replay_playback_stats().is_some() {
+        SuperShuckieReplayState::Playback
+    }
+    else if frontend.get_replay_file_info().is_some() {
+        SuperShuckieReplayState::Recording
+    }
+    else {
+        SuperShuckieReplayState::NoReplay
+    }
+}
