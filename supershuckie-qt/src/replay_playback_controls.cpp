@@ -11,7 +11,7 @@ using namespace SuperShuckie64;
 #define PLAYBACK_HEIGHT 24
 
 #define PAUSE_BUTTON_THICKNESS 4
-#define BUTTON_PADDING_HORIZ 8
+#define BUTTON_PADDING_HORIZ 12
 #define BUTTON_PADDING_VERT 4
 #define BUTTON_ICON_WIDTH 12
 #define BUTTON_FULL_WIDTH (BUTTON_PADDING_HORIZ*2 + BUTTON_ICON_WIDTH)
@@ -29,20 +29,14 @@ ReplayPlaybackControls::ReplayPlaybackControls(MainWindow *main_window, QWidget 
 
 void ReplayPlaybackControls::paintEvent(QPaintEvent *event) {
     auto dark_theme = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+    auto palette = QGuiApplication::palette();
 
     QPainter painter(this);
     QRect fill_rectangle = QRect(0, 0, this->width(), PLAYBACK_HEIGHT);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    if(dark_theme) {
-        painter.fillRect(fill_rectangle, Qt::black);
-        painter.setBrush(QColor(Qt::white));
-    }
-    else {
-        painter.fillRect(fill_rectangle, Qt::white);
-        painter.setBrush(QColor(60, 60, 60));
-    }
-
+    painter.fillRect(fill_rectangle, palette.window().color());
+    painter.setBrush(palette.windowText());
 
     if(this->is_paused) {
         static const QPointF PLAY_BUTTON[3] = {
@@ -75,8 +69,8 @@ void ReplayPlaybackControls::paintEvent(QPaintEvent *event) {
     
     auto bounds = this->playback_bar_bounds();
 
-    QColor progress_color = dark_theme ? QColor(20, 140, 255) : QColor(20, 60, 255);
-    QColor remaining_color = QColor(127, 127, 127);
+    QColor progress_color = palette.accent().color();
+    QColor remaining_color = QColor(64, 64, 64);
 
     QPointF center_point(bounds.x(), bounds.y() + BAR_THICKNESS / 2.0);
 
@@ -99,7 +93,7 @@ void ReplayPlaybackControls::paintEvent(QPaintEvent *event) {
         remaining_bounds.setX(remaining_bounds.x() + elapsed_width);
 
         painter.fillRect(elapsed_bounds, progress_color);
-        painter.fillRect(remaining_bounds, remaining_color);
+        painter.fillRect(remaining_bounds, palette.mid().color());
     }
 
     painter.drawEllipse(center_point, INDICATOR_RADIUS, INDICATOR_RADIUS);
