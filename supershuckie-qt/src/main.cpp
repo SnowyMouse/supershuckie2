@@ -18,7 +18,7 @@ int main(int argc, char **argv) {
 
     QApplication app(argc, argv);
 
-    SixShooter::Theme::set_win32_theme();
+    SixShooter::Theme theme;
 
     SuperShuckie64::MainWindow window;
     window.show();

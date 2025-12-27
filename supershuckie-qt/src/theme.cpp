@@ -5,14 +5,23 @@
 #include <QStyleFactory>
 #include <QPalette>
 #include <QStyleHints>
+#include <QStyle>
 #endif
 
 #include "theme.hpp"
 
 namespace SixShooter {
     #ifdef _WIN32
-    void Theme::set_win32_theme() {
-        auto dark_theme = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+    Theme::Theme() {
+        this->original_palette = QGuiApplication::palette();
+
+        auto hints = QGuiApplication::styleHints();
+        connect(hints, SIGNAL(colorSchemeChanged(Qt::ColorScheme)), this, SLOT(set_win32_theme(Qt::ColorScheme)));
+        this->set_win32_theme(QGuiApplication::styleHints()->colorScheme());
+    }
+
+    void Theme::set_win32_theme(Qt::ColorScheme scheme) {
+        auto dark_theme = scheme == Qt::ColorScheme::Dark;
         if(dark_theme) {
             qApp->setStyle(QStyleFactory::create("Fusion"));
             QPalette dark_palette;
@@ -56,9 +65,10 @@ namespace SixShooter {
         }
         else {
             qApp->setStyle(QStyleFactory::create("windowsvista"));
+            qApp->setPalette(this->original_palette);
         }
     }
     #else
-    void Theme::set_win32_theme() {}
+    Theme::Theme() {}
     #endif
 }

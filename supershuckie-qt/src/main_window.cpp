@@ -120,10 +120,6 @@ MainWindow::MainWindow(): QMainWindow() {
     this->status_bar = new QStatusBar(this);
     this->setStatusBar(this->status_bar);
 
-    #ifdef _WIN32
-    this->status_bar->setStyleSheet("QStatusBar::item { border: 0 }");
-    #endif
-
     this->paused_state = new QLabel("PAUSED");
     this->paused_state->setFixedSize(this->paused_state->sizeHint());
     this->status_bar->addPermanentWidget(this->paused_state);
