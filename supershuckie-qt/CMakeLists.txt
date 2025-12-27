@@ -69,7 +69,9 @@ if(${APPLE})
         OUTPUT_NAME "SuperShuckie"
     )
 elseif(${WIN32})
-    add_executable(supershuckie WIN32)
+    add_executable(supershuckie WIN32
+        src/windows.rc
+    )
 else()
     set_target_properties(supershuckie-debug
         OUTPUT_NAME "supershuckie"
