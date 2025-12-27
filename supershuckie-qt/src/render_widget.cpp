@@ -125,9 +125,9 @@ void GameRenderWidget::keyPressEvent(QKeyEvent *event) {
 }
 
 void GameRenderWidget::keyReleaseEvent(QKeyEvent *event) {
-    QWidget::keyPressEvent(event);
+    QWidget::keyReleaseEvent(event);
 
-    if(this->main_window->frontend != nullptr) {
+    if(this->main_window->frontend != nullptr && !event->isAutoRepeat()) {
         supershuckie_frontend_key_press(this->main_window->frontend, event->key(), false);
     }
 }
