@@ -24,6 +24,7 @@ using namespace SuperShuckie64;
 ReplayPlaybackControls::ReplayPlaybackControls(MainWindow *main_window, QWidget *parent): QWidget(parent), main_window(main_window) {
     this->setFixedHeight(PLAYBACK_HEIGHT);
     this->setMinimumWidth(PLAYBACK_HEIGHT);
+    this->setFocusPolicy(Qt::NoFocus);
 }
 
 void ReplayPlaybackControls::paintEvent(QPaintEvent *event) {

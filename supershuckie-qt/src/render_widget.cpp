@@ -11,6 +11,7 @@ GameRenderWidget::GameRenderWidget(MainWindow *window, QWidget *parent): QGraphi
     this->setHorizontalScrollBarPolicy(Qt::ScrollBarPolicy::ScrollBarAlwaysOff);
     this->setVerticalScrollBarPolicy(Qt::ScrollBarPolicy::ScrollBarAlwaysOff);
     this->setSizePolicy(QSizePolicy::Policy::Fixed, QSizePolicy::Policy::Fixed);
+    this->setFocusPolicy(Qt::ClickFocus);
 }
 
 void GameRenderWidget::set_dimensions(unsigned width, unsigned height, unsigned scale) {

@@ -213,6 +213,7 @@ MainWindow::MainWindow(): QMainWindow() {
     this->auto_pause_on_record->setChecked(supershuckie_frontend_get_auto_pause_on_record_setting(this->frontend));
 
     this->sdl.frontend = this->frontend;
+    this->render_widget->setFocus(Qt::OtherFocusReason);
 }
 
 void MainWindow::set_title(const char *title) {
