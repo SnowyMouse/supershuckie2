@@ -26,6 +26,7 @@ add_library(supershuckie-cpp-static STATIC
     src/controller_settings_window.cpp
     src/sdl_event_wrapper.cpp
     src/theme.cpp
+    src/replay_playback_controls.cpp
 )
 
 set_property(TARGET supershuckie-cpp-static PROPERTY CXX_STANDARD 20)

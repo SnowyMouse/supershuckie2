@@ -13,7 +13,6 @@
 #include <QStandardPaths>
 #include <QDesktopServices>
 #include <QGridLayout>
-#include <QSlider>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -30,6 +29,7 @@
 #include "render_widget.hpp"
 #include "main_window.hpp"
 #include "controller_settings_window.hpp"
+#include "replay_playback_controls.hpp"
 
 using namespace SuperShuckie64;
 
@@ -113,11 +113,8 @@ MainWindow::MainWindow(): QMainWindow() {
     this->render_widget = new GameRenderWidget(this, center_widget);
     layout->addWidget(this->render_widget, 0, 0);
 
-    this->playback_bar = new QSlider(Qt::Horizontal, center_widget);
+    this->playback_bar = new ReplayPlaybackControls(this, center_widget);
     layout->addWidget(this->playback_bar, 1, 0);
-    connect(this->playback_bar, SIGNAL(valueChanged(int)), this, SLOT(do_change_playback_time(int)));
-    connect(this->playback_bar, SIGNAL(sliderPressed()), this, SLOT(do_temporarily_pause_replay()));
-    connect(this->playback_bar, SIGNAL(sliderReleased()), this, SLOT(do_temporarily_pause_replay()));
     this->playback_bar->hide();
 
     this->status_bar = new QStatusBar(this);
@@ -305,19 +302,6 @@ void MainWindow::tick() {
         std::uint32_t frames_total = 0;
         supershuckie_frontend_get_elapsed_time(this->frontend, &frames_total, &ms_total);
         this->status_bar_time->set_timestamp(ms_total);
-
-        if(state == SuperShuckieReplayState::SuperShuckieReplayState__Playback) {
-            if(!this->playback_bar->isSliderDown()) {
-                std::uint32_t total_frames;
-                supershuckie_frontend_get_replay_playback_time(this->frontend, &total_frames, nullptr);
-
-                this->playback_bar->blockSignals(true);
-                this->playback_bar->setValue(frames_total);
-                this->playback_bar->setMaximum(total_frames);
-                this->playback_bar->blockSignals(false);
-            }
-        }
-
         this->status_bar_time->show();
         this->replay_time_shown = true;
     }
@@ -345,6 +329,8 @@ void MainWindow::tick() {
     if(this->last_known_replay_state != state) {
         this->refresh_action_states();
     }
+
+    this->playback_bar->tick();
 }
 
 void MainWindow::set_up_menu() {
@@ -845,10 +831,7 @@ void MainWindow::do_play_replay() {
 
     std::snprintf(fmt, sizeof(fmt), "Opened replay file \"%s\"", text->c_str());
     this->set_title(fmt);
-    this->playback_bar->blockSignals(true);
-    this->playback_bar->setValue(0);
-    this->playback_bar->setMaximum(total_frames);
-    this->playback_bar->blockSignals(false);
+
     this->playback_bar->show();
     this->refresh_action_states();
 }
@@ -981,6 +964,3 @@ void MainWindow::do_toggle_replay_keyboard_controls() {
     supershuckie_frontend_set_custom_setting(this->frontend, KEYBOARD_REPLAY_CONTROLS_DISABLED, !this->keyboard_replay_controls->isChecked() ? "1" : "0");
 }
 
-void MainWindow::do_temporarily_pause_replay() {
-    supershuckie_frontend_set_playback_frozen(this->frontend, this->playback_bar->isSliderDown());
-}

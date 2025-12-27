@@ -13,7 +13,6 @@ class QMenu;
 class QAction;
 class QCloseEvent;
 class QLabel;
-class QSlider;
 
 namespace SuperShuckie64 {
 
@@ -24,6 +23,7 @@ class SuperShuckieTimestamp;
 class AskForTextDialog;
 class SelectItemDialog;
 class ControlsSettingsWindow;
+class ReplayPlaybackControls;
 
 std::vector<std::string> wrap_array_std(SuperShuckieStringArrayRaw *array);
 
@@ -41,6 +41,7 @@ class MainWindow: public QMainWindow {
     friend AskForTextDialog;
     friend SelectItemDialog;
     friend ControlsSettingsWindow;
+    friend ReplayPlaybackControls;
     
 public:
     MainWindow();
@@ -99,7 +100,7 @@ private:
     QLabel *current_state;
     QLabel *paused_state;
 
-    QSlider *playback_bar;
+    ReplayPlaybackControls *playback_bar;
 
     QAction *use_number_row_for_quick_slots;
     QAction *show_status_bar;
@@ -186,7 +187,6 @@ private slots:
     void do_open_user_dir();
     void do_change_playback_time(int frames);
     void do_toggle_replay_keyboard_controls();
-    void do_temporarily_pause_replay();
 };
 
 class NumberedAction: public QAction {
