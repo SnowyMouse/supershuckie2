@@ -1,15 +1,15 @@
 use crate::emulator::{EmulatorCore, Input, RunTime, ScreenData, ScreenDataEncoding};
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
-use alloc::format;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 use safeboy::rgb_encoder::encode_a8r8g8b8;
-use safeboy::{DirectAccessRegion, Gameboy, GameboyCallbacks, InputButton, RtcMode, RunnableInstanceFunctions, RunningGameboy, TurboMode, VBlankType};
+use safeboy::{BorderMode, DirectAccessRegion, Gameboy, GameboyCallbacks, InputButton, RtcMode, RunnableInstanceFunctions, RunningGameboy, TurboMode, VBlankType};
 pub use safeboy::Model;
+use spin::Lazy;
 use supershuckie_replay_recorder::blake3_hash;
 use supershuckie_replay_recorder::replay_file::{ReplayConsoleType, ReplayHeaderBlake3Hash};
 
@@ -46,6 +46,7 @@ impl GameBoyColor {
         core.load_rom(rom);
         core.set_rgb_encoder(encode_a8r8g8b8);
         core.set_rendering_enabled(true);
+        core.set_border_mode(BorderMode::Never);
 
         let dimensions = core.get_pixel_buffer();
         let screen_data = ScreenData {
@@ -62,13 +63,15 @@ impl GameBoyColor {
 
         core.set_callbacks(Some(Box::new(CallbackHandler { callback_data: callback_data.clone() })));
 
-        Self {
+        let mut r = Self {
             turbo_mode: TurboMode::Disabled,
             callback_data,
             core,
             rom_checksum: blake3_hash(rom),
             bios_checksum: blake3_hash(bios),
-        }
+        };
+        r.hard_reset();
+        r
     }
 }
 
@@ -170,7 +173,7 @@ impl EmulatorCore for GameBoyColor {
     }
 
     fn load_save_state(&mut self, state: &[u8]) -> Result<(), String> {
-        self.core.load_save_state(state).map_err(|e| format!("{e:?}"))
+        self.core.load_save_state(state).map_err(|e| alloc::format!("{e:?}"))
     }
 
     fn encode_input(&self, input: Input, into: &mut Vec<u8>) {
@@ -214,12 +217,23 @@ impl EmulatorCore for GameBoyColor {
     #[inline]
     fn hard_reset(&mut self) {
         self.core.reset();
+
+        // skip the intro
+        if self.core.is_hle_sgb() {
+            let mut state = self.create_save_state();
+            state[0x1AB66] = 201;
+            state[0x1AB67] = 0;
+            let _ = self.load_save_state(&state);
+        }
     }
 
     fn replay_console_type(&self) -> Option<ReplayConsoleType> {
         match self.core.is_cgb() {
             true => Some(ReplayConsoleType::GameBoyColor),
-            false => Some(ReplayConsoleType::GameBoy)
+            false => match self.core.is_sgb() {
+                false => Some(ReplayConsoleType::GameBoy),
+                true => Some(ReplayConsoleType::SuperGameBoy2)
+            }
         }
     }
 
@@ -235,6 +249,15 @@ impl EmulatorCore for GameBoyColor {
 
     #[inline]
     fn core_name(&self) -> &'static str {
-        safeboy::GB_VERSION
+        if self.core.is_hle_sgb() {
+            GB_VERSION_WITH_HACKS.as_str()
+        }
+        else {
+            safeboy::GB_VERSION
+        }
     }
 }
+
+static GB_VERSION_WITH_HACKS: Lazy<String> = Lazy::new(|| {
+    alloc::format!("{} with SGB intro skipped", safeboy::GB_VERSION)
+});

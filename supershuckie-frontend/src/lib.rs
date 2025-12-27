@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use supershuckie_core::emulator::{EmulatorCore, GameBoyColor, Input, Model, NullEmulatorCore, PartialReplayRecordMetadata, ScreenData};
 use supershuckie_core::{ReplayPlayerAttachError, Speed, SuperShuckieRapidFire, ThreadedSuperShuckieCore};
-use supershuckie_replay_recorder::replay_file::{ReplayHeaderBlake3Hash, ReplayPatchFormat};
+use supershuckie_replay_recorder::replay_file::{ReplayConsoleType, ReplayHeaderBlake3Hash, ReplayPatchFormat};
 use supershuckie_replay_recorder::ByteVec;
 use supershuckie_replay_recorder::replay_file::playback::ReplayFilePlayer;
 use supershuckie_replay_recorder::replay_file::record::ReplayFileRecorderSettings;
@@ -27,6 +27,7 @@ pub type ConnectedControllerIndex = u32;
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum SuperShuckieEmulatorType {
     GameBoy,
+    GameBoySGB2,
     GameBoyColor
 }
 
@@ -47,7 +48,6 @@ pub struct SuperShuckieFrontend {
     pokeabyte_error: Option<UTF8CString>,
 
     loaded_rom_data: Option<Vec<u8>>,
-    loaded_bios_data: Option<Vec<u8>>,
 
     current_input: Input,
     current_rapid_fire_input: Option<SuperShuckieRapidFire>,
@@ -80,7 +80,6 @@ impl SuperShuckieFrontend {
             rom_name: None,
             save_file: None,
             loaded_rom_data: None,
-            loaded_bios_data: None,
             frame_count: 0,
             current_rapid_fire_input: None,
             current_toggled_input: None,
@@ -236,6 +235,19 @@ impl SuperShuckieFrontend {
 
         if self.settings.replay_settings.auto_decompress_replays_upfront {
             player.decompress_all_blobs();
+        }
+
+        let current_emulator_type = self.core_metadata.emulator_type.expect("???? no emulator type when reloading a replay?");
+        let metadata = player.get_replay_metadata();
+        let expected_type = match metadata.console_type {
+            ReplayConsoleType::GameBoy => SuperShuckieEmulatorType::GameBoy,
+            ReplayConsoleType::SuperGameBoy2 => SuperShuckieEmulatorType::GameBoySGB2,
+            ReplayConsoleType::GameBoyColor => SuperShuckieEmulatorType::GameBoyColor,
+            _ => current_emulator_type
+        };
+
+        if current_emulator_type != expected_type {
+            self.instantiate_and_load_core(expected_type);
         }
 
         if let Err(e) = self.core.attach_replay_player(player, override_errors) {
@@ -451,12 +463,22 @@ impl SuperShuckieFrontend {
 
         let emulator_to_use = match extension.to_lowercase().as_str() {
             "gb" | "gbc" => {
+                let game_boy = match self.settings.game_boy_settings.sgb {
+                    true => SuperShuckieEmulatorType::GameBoySGB2,
+                    false => SuperShuckieEmulatorType::GameBoy
+                };
+
                 match self.settings.game_boy_settings.gbc_mode {
                     GameBoyMode::AlwaysGBC => SuperShuckieEmulatorType::GameBoyColor,
-                    GameBoyMode::AlwaysGB => SuperShuckieEmulatorType::GameBoy,
-
-                    // TODO: check header (the extension will not help)
-                    GameBoyMode::GBInGBMode => todo!(),
+                    GameBoyMode::AlwaysGB => game_boy,
+                    GameBoyMode::GBInGBMode => {
+                        if data.get(0x143).copied() == Some(0x00) {
+                            game_boy
+                        }
+                        else {
+                            SuperShuckieEmulatorType::GameBoyColor
+                        }
+                    },
                 }
             },
             unknown => return Err(format!("Unknown or unsupported ROM file type .{unknown}").into())
@@ -465,8 +487,6 @@ impl SuperShuckieFrontend {
         self.create_userdata_for_rom(filename)?;
         self.close_rom();
         self.loaded_rom_data = Some(data);
-        let bios = self.get_bios_for_core(emulator_to_use);
-        self.loaded_bios_data = Some(bios.clone());
         self.rom_name = Some(Arc::new(UTF8CString::from_str(filename)));
         self.core_metadata.emulator_type = Some(emulator_to_use);
         self.save_file = Some(Arc::new(self.get_current_save_file_name_for_rom(filename)));
@@ -522,15 +542,22 @@ impl SuperShuckieFrontend {
     }
 
     fn reload_rom_in_place(&mut self) {
-        self.before_unload_or_reload_rom();
         let emulator_type = self.core_metadata.emulator_type.expect("reload_rom_in_place with no emulator type");
+        self.instantiate_and_load_core(emulator_type);
+    }
+
+    fn instantiate_and_load_core(&mut self, emulator_type: SuperShuckieEmulatorType) {
         let rom_name = self.get_current_rom_name().expect("reload_rom_in_place with no loaded ROM");
         let save_file = self.get_current_save_name().expect("reload_rom_in_place with no save file");
         let save_file_data = self.get_save_file_data(rom_name, save_file);
         let rom_data = self.loaded_rom_data.as_ref().expect("reload_rom_in_place with no loaded rom");
-        let bios_data = self.loaded_bios_data.as_ref().expect("reload_rom_in_place with no loaded bios");
-        let core = self.make_new_core(rom_data, bios_data, save_file_data, emulator_type);
-        self.core = ThreadedSuperShuckieCore::new(core);
+        let core = self.make_new_core(rom_data, save_file_data, emulator_type);
+        self.switch_core(ThreadedSuperShuckieCore::new(core));
+    }
+
+    fn switch_core(&mut self, core: ThreadedSuperShuckieCore) {
+        self.before_unload_or_reload_rom();
+        self.core = core;
         self.after_switch_core();
         self.after_load_rom();
     }
@@ -540,10 +567,13 @@ impl SuperShuckieFrontend {
         self.current_save_state_history_position = 0;
     }
 
-    fn make_new_core(&self, rom_data: &[u8], bios: &[u8], save_file: Option<Vec<u8>>, emulator_type: SuperShuckieEmulatorType) -> Box<dyn EmulatorCore> {
+    fn make_new_core(&self, rom_data: &[u8], save_file: Option<Vec<u8>>, emulator_type: SuperShuckieEmulatorType) -> Box<dyn EmulatorCore> {
+        let bios = self.get_bios_for_core(emulator_type);
+
         let mut core: Box<dyn EmulatorCore> = match emulator_type {
-            SuperShuckieEmulatorType::GameBoy => Box::new(GameBoyColor::new_from_rom(rom_data, bios, Model::DmgB)),
-            SuperShuckieEmulatorType::GameBoyColor => Box::new(GameBoyColor::new_from_rom(rom_data, bios, Model::Cgb0))
+            SuperShuckieEmulatorType::GameBoy => Box::new(GameBoyColor::new_from_rom(rom_data, bios.as_slice(), Model::DmgB)),
+            SuperShuckieEmulatorType::GameBoySGB2 => Box::new(GameBoyColor::new_from_rom(rom_data, bios.as_slice(), Model::Sgb2)),
+            SuperShuckieEmulatorType::GameBoyColor => Box::new(GameBoyColor::new_from_rom(rom_data, bios.as_slice(), Model::Cgb0))
         };
 
         if let Some(sram) = save_file {
@@ -573,7 +603,7 @@ impl SuperShuckieFrontend {
     fn get_bios_for_core(&self, emulator_kind: SuperShuckieEmulatorType) -> Vec<u8> {
         // TODO: Let this be configurable.
         match emulator_kind {
-            SuperShuckieEmulatorType::GameBoy => todo!("DMG BIOS"),
+            SuperShuckieEmulatorType::GameBoy | SuperShuckieEmulatorType::GameBoySGB2 => include_bytes!("../../bootrom/dmg/dmg.bin").to_vec(),
             SuperShuckieEmulatorType::GameBoyColor => include_bytes!("../../bootrom/cgb/cgb_boot/cgb_boot_fast.bin").to_vec()
         }
     }
@@ -975,6 +1005,66 @@ impl SuperShuckieFrontend {
                 self.pokeabyte_error = Some(e.into());
                 Err(self.pokeabyte_error.as_ref().expect("pokeabyte_error was just set earlier..."))
             }
+        }
+    }
+
+    #[inline]
+    pub fn get_gbc_mode(&self) -> GameBoyMode {
+        self.settings.game_boy_settings.gbc_mode
+    }
+
+    #[inline]
+    pub fn set_gbc_mode(&mut self, mode: GameBoyMode) {
+        self.settings.game_boy_settings.gbc_mode = mode;
+        self.reload_game_boy_if_needed();
+    }
+
+    #[inline]
+    pub fn is_sgb_enabled(&self) -> bool {
+        self.settings.game_boy_settings.sgb
+    }
+
+    #[inline]
+    pub fn set_sgb_enabled(&mut self, enabled: bool) {
+        self.settings.game_boy_settings.sgb = enabled;
+        self.reload_game_boy_if_needed();
+    }
+
+    fn reload_game_boy_if_needed(&mut self) {
+        let current = match self.core_metadata.emulator_type {
+            Some(n) if matches!(n, SuperShuckieEmulatorType::GameBoy | SuperShuckieEmulatorType::GameBoyColor | SuperShuckieEmulatorType::GameBoySGB2) => n,
+            _ => return
+        };
+
+        let Some(rom) = self.loaded_rom_data.as_ref() else {
+            panic!("emulator_type is non-None but we have no loaded rom data???")
+        };
+
+        let expected = self.choose_for_game_boy(rom.as_slice());
+
+        if expected != current {
+            self.core_metadata.emulator_type = Some(expected);
+            self.reload_rom_in_place();
+        }
+    }
+
+    fn choose_for_game_boy(&self, data: &[u8]) -> SuperShuckieEmulatorType {
+        let game_boy = match self.settings.game_boy_settings.sgb {
+            true => SuperShuckieEmulatorType::GameBoySGB2,
+            false => SuperShuckieEmulatorType::GameBoy
+        };
+
+        match self.settings.game_boy_settings.gbc_mode {
+            GameBoyMode::AlwaysGBC => SuperShuckieEmulatorType::GameBoyColor,
+            GameBoyMode::AlwaysGB => game_boy,
+            GameBoyMode::GBInGBMode => {
+                if data.get(0x143).copied() == Some(0x00) {
+                    game_boy
+                }
+                else {
+                    SuperShuckieEmulatorType::GameBoyColor
+                }
+            },
         }
     }
 }

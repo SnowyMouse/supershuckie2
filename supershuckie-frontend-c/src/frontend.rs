@@ -5,6 +5,7 @@ use std::ptr::null;
 use std::slice::from_raw_parts_mut;
 use supershuckie_core::emulator::{ScreenData, ScreenDataEncoding};
 use supershuckie_frontend::{ConnectedControllerIndex, SuperShuckieFrontend, SuperShuckieFrontendCallbacks, UserInput};
+use supershuckie_frontend::settings::GameBoyMode;
 use supershuckie_frontend::util::UTF8CString;
 use crate::control_settings::SuperShuckieControlSettings;
 use crate::string_array::SuperShuckieStringArray;
@@ -675,4 +676,26 @@ pub extern "C" fn supershuckie_frontend_get_replay_state(
     else {
         SuperShuckieReplayState::NoReplay
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_get_gbc_mode(frontend: &SuperShuckieFrontend) -> GameBoyMode {
+    frontend.get_gbc_mode()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_set_gbc_mode(frontend: &mut SuperShuckieFrontend, mode: u32) {
+    if let Ok(m) = GameBoyMode::try_from(mode) {
+        frontend.set_gbc_mode(m)
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_is_sgb_enabled(frontend: &SuperShuckieFrontend) -> bool {
+    frontend.is_sgb_enabled()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn supershuckie_frontend_set_sgb_enabled(frontend: &mut SuperShuckieFrontend, enabled: bool) {
+    frontend.set_sgb_enabled(enabled);
 }

@@ -84,6 +84,37 @@ void supershuckie_frontend_axis(
 );
 
 /**
+ * Set whether or not SGB is enabled.
+ */
+void supershuckie_frontend_set_sgb_enabled(struct SuperShuckieFrontendRaw *frontend, bool enabled);
+
+/**
+ * Get whether or not SGB is enabled.
+ */
+bool supershuckie_frontend_is_sgb_enabled(struct SuperShuckieFrontendRaw *frontend);
+
+enum SuperShuckieGBCMode {
+    SuperShuckieGBCMode__AlwaysGBC = 0,
+    SuperShuckieGBCMode__GBInGBMode = 1,
+    SuperShuckieGBCMode__AlwaysGB = 2
+};
+
+/**
+ * Set the GBC mode.
+ */
+void supershuckie_frontend_set_gbc_mode(struct SuperShuckieFrontendRaw *frontend, uint32_t mode);
+
+/**
+ * Get the GBC mode.
+ */
+uint32_t supershuckie_frontend_get_gbc_mode(struct SuperShuckieFrontendRaw *frontend);
+
+/**
+ * Get whether or not SGB is enabled.
+ */
+bool supershuckie_frontend_is_sgb_enabled(struct SuperShuckieFrontendRaw *frontend);
+
+/**
  * Set whether or not the frontend is paused.
  */
 void supershuckie_frontend_set_paused(struct SuperShuckieFrontendRaw *frontend, bool paused);

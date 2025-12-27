@@ -179,23 +179,27 @@ impl Default for EmulationSettings {
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GameBoySettings {
     #[serde(default = "GameBoyMode::default")]
-    pub gbc_mode: GameBoyMode
+    pub gbc_mode: GameBoyMode,
+
+    #[serde(default = "bool::default")]
+    pub sgb: bool
 }
 
-#[derive(Copy, Clone, PartialEq, Debug, Serialize, Deserialize, Default)]
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, Deserialize, Default, TryFromPrimitive)]
+#[repr(u32)]
 pub enum GameBoyMode {
     /// Run all Game Boy games in Game Boy Color mode
     #[serde(rename = "GBC-always")]
     #[default]
-    AlwaysGBC,
+    AlwaysGBC = 0,
 
     /// Run Game Boy games in Game Boy mode
     #[serde(rename = "GBC-auto")]
-    GBInGBMode,
+    GBInGBMode = 1,
 
     /// Run all Game Boy games in Game Boy mode, even incompatible Game Boy Color games
     #[serde(rename = "GBC-never")]
-    AlwaysGB
+    AlwaysGB = 2
 }
 
 pub type ControlMap = BTreeMap<i32, ControlSetting>;

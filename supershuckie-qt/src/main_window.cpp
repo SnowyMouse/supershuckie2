@@ -207,6 +207,7 @@ MainWindow::MainWindow(): QMainWindow() {
     this->auto_stop_replay_on_input->setChecked(supershuckie_frontend_get_auto_stop_playback_on_input_setting(this->frontend));
     this->auto_unpause_on_input->setChecked(supershuckie_frontend_get_auto_unpause_on_input_setting(this->frontend));
     this->auto_pause_on_record->setChecked(supershuckie_frontend_get_auto_pause_on_record_setting(this->frontend));
+    this->sgb_enabled->setChecked(supershuckie_frontend_is_sgb_enabled(this->frontend));
 
     this->sdl.frontend = this->frontend;
     this->render_widget->setFocus(Qt::OtherFocusReason);
@@ -423,7 +424,7 @@ void MainWindow::set_up_save_states_menu() {
         this->quick_save_save_states[i - 1] = quick_save;
         menu->addAction(quick_save);
     }
-    
+
     quick_slots->addSeparator();
     
     this->use_number_row_for_quick_slots = quick_slots->addAction("Use number row instead of function keys");
@@ -554,6 +555,25 @@ void MainWindow::set_up_settings_menu() {
 
     this->settings_menu->addSeparator();
 
+    this->game_boy_settings = this->settings_menu->addMenu("Game Boy settings");
+
+    auto *gbc_mode_items = this->game_boy_settings->addMenu("Game Boy Color mode");
+
+    this->gbc_mode[0] = new NumberedAction(this, "Always Game Boy Color", SuperShuckieGBCMode::SuperShuckieGBCMode__AlwaysGBC, &MainWindow::set_gbc_mode);
+    this->gbc_mode[1] = new NumberedAction(this, "Game Boy Color games only", SuperShuckieGBCMode::SuperShuckieGBCMode__GBInGBMode, &MainWindow::set_gbc_mode);
+    this->gbc_mode[2] = new NumberedAction(this, "Always Game Boy", SuperShuckieGBCMode::SuperShuckieGBCMode__AlwaysGB, &MainWindow::set_gbc_mode);
+
+    for(auto m : this->gbc_mode) {
+        m->setCheckable(true);
+        gbc_mode_items->addAction(m);
+    }
+
+    this->sgb_enabled = this->game_boy_settings->addAction("Enable SGB colors (experimental)");
+    connect(this->sgb_enabled, SIGNAL(triggered()), this, SLOT(do_toggle_sgb()));
+    this->sgb_enabled->setCheckable(true);
+
+    this->settings_menu->addSeparator();
+
     this->enable_pokeabyte_integration = this->settings_menu->addAction("Enable Poke-A-Byte integration");
     this->enable_pokeabyte_integration->setCheckable(true);
     connect(this->enable_pokeabyte_integration, SIGNAL(triggered()), this, SLOT(do_toggle_pokeabyte()));
@@ -588,9 +608,16 @@ void MainWindow::refresh_action_states() {
     this->play_replay->setEnabled(game_loaded);
     this->record_replay->setEnabled(game_loaded);
     this->resume_replay->setEnabled(game_loaded);
+    this->game_boy_settings->setEnabled(true);
 
     auto replay_state = this->frontend != nullptr ?
         supershuckie_frontend_get_replay_state(this->frontend) : SuperShuckieReplayState::SuperShuckieReplayState__NoReplay;
+
+
+    auto gbc_mode = this->frontend != nullptr ? supershuckie_frontend_get_gbc_mode(this->frontend) : 0;
+    for(auto &i : this->gbc_mode) {
+        i->setChecked(i->number == gbc_mode);
+    }
 
     switch(replay_state) {
         case SuperShuckieReplayState::SuperShuckieReplayState__Recording:
@@ -599,6 +626,7 @@ void MainWindow::refresh_action_states() {
             this->current_state->setText("RECORDING");
             this->current_state->show();
             this->record_replay->setText("Stop recording replay");
+            this->game_boy_settings->setEnabled(false);
             break;
 
         case SuperShuckieReplayState::SuperShuckieReplayState__Playback:
@@ -615,6 +643,7 @@ void MainWindow::refresh_action_states() {
             }
 
             this->play_replay->setText("Stop replay");
+            this->game_boy_settings->setEnabled(false);
             break;
 
         case SuperShuckieReplayState::SuperShuckieReplayState__NoReplay:
@@ -961,3 +990,11 @@ void MainWindow::do_toggle_replay_keyboard_controls() {
     supershuckie_frontend_set_custom_setting(this->frontend, KEYBOARD_REPLAY_CONTROLS_DISABLED, !this->keyboard_replay_controls->isChecked() ? "1" : "0");
 }
 
+void MainWindow::do_toggle_sgb() {
+    supershuckie_frontend_set_sgb_enabled(this->frontend, this->sgb_enabled->isChecked());
+}
+
+void MainWindow::set_gbc_mode(std::uint8_t mode) {
+    supershuckie_frontend_set_gbc_mode(this->frontend, mode);
+    this->refresh_action_states();
+}

@@ -97,6 +97,10 @@ private:
     QAction *auto_pause_on_record;
     QAction *keyboard_replay_controls;
 
+    QAction *sgb_enabled;
+    QMenu *game_boy_settings;
+    NumberedAction *gbc_mode[3];
+
     QLabel *current_state;
     QLabel *paused_state;
 
@@ -133,6 +137,7 @@ private:
 
     void quick_save(std::uint8_t index);
     void quick_load(std::uint8_t index);
+    void set_gbc_mode(std::uint8_t mode);
 
     void make_save_state(const char *state);
     void load_save_state(const char *state);
@@ -187,6 +192,7 @@ private slots:
     void do_open_user_dir();
     void do_change_playback_time(int frames);
     void do_toggle_replay_keyboard_controls();
+    void do_toggle_sgb();
 };
 
 class NumberedAction: public QAction {
