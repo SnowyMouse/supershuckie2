@@ -125,7 +125,7 @@ void ReplayPlaybackControls::tick() {
     supershuckie_frontend_get_replay_playback_time(this->main_window->frontend, &total_frames, nullptr);
     supershuckie_frontend_get_elapsed_time(this->main_window->frontend, &elapsed_frames, nullptr);
 
-    double calculated_progress = total_frames == 0 ? 0.0 : static_cast<double>(elapsed_frames) / static_cast<double>(total_frames);
+    double calculated_progress = total_frames == 0 ? 1.0 : static_cast<double>(elapsed_frames) / static_cast<double>(total_frames);
     if(!this->is_clicking_on_bar && this->playback_progress != calculated_progress) {
         this->playback_progress = calculated_progress;
         needs_repaint = true;

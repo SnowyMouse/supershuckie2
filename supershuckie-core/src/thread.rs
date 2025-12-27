@@ -27,6 +27,7 @@ pub struct ThreadedSuperShuckieCore {
     desired_replay_frame: Arc<AtomicU32>,
     delta_replay_frames: Arc<AtomicI32>,
 
+    playback: bool,
     playback_total_frames: UnsignedInteger,
     playback_total_milliseconds: UnsignedInteger,
 }
@@ -78,6 +79,7 @@ impl ThreadedSuperShuckieCore {
             elapsed_milliseconds: replay_milliseconds,
             playback_total_frames,
             playback_total_milliseconds,
+            playback: false,
             desired_replay_frame,
             delta_replay_frames
         }
@@ -210,6 +212,12 @@ impl ThreadedSuperShuckieCore {
         self.elapsed_milliseconds.load(Ordering::Relaxed)
     }
 
+    /// Get whether or not a replay is being played back.
+    #[inline]
+    pub fn is_playing_back(&self) -> bool {
+        self.playback
+    }
+
     /// Get the total number of frames in the current playback.
     #[inline]
     pub fn get_playback_total_frames(&self) -> u32 {
@@ -241,6 +249,7 @@ impl ThreadedSuperShuckieCore {
             Err(_) => {
                 self.playback_total_frames = total_frames;
                 self.playback_total_milliseconds = total_ticks;
+                self.playback = true;
                 Ok(())
             },
             Ok(n) => Err(n)
@@ -251,6 +260,7 @@ impl ThreadedSuperShuckieCore {
     pub fn detach_replay_player(&mut self) {
         self.playback_total_frames = 0;
         self.playback_total_milliseconds = 0;
+        self.playback = false;
         self.sender.send(ThreadCommand::DetachReplayPlayer)
             .expect("DetachReplayPlayer - the core thread has crashed")
     }

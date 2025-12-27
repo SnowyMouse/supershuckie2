@@ -850,8 +850,7 @@ void MainWindow::do_play_replay() {
         }
     }
 
-    std::uint32_t total_frames = 0;
-    if(!supershuckie_frontend_get_replay_playback_time(this->frontend, &total_frames, nullptr)) {
+    if(!supershuckie_frontend_get_replay_playback_time(this->frontend, nullptr, nullptr)) {
         return;
     }
 

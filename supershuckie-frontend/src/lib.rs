@@ -285,13 +285,12 @@ impl SuperShuckieFrontend {
 
     /// Get the replay playback stats if currently playing back.
     pub fn get_replay_playback_stats(&self) -> Option<SuperShuckieReplayTimes> {
+        if !self.core.is_playing_back() {
+            return None;
+        }
+        
         let frames = self.core.get_playback_total_frames();
         let ms = self.core.get_playback_total_milliseconds();
-
-        if frames == 0 && ms == 0 {
-            return None
-        }
-
         Some(SuperShuckieReplayTimes { total_milliseconds: ms, total_frames: frames })
     }
 
@@ -462,25 +461,7 @@ impl SuperShuckieFrontend {
         })?;
 
         let emulator_to_use = match extension.to_lowercase().as_str() {
-            "gb" | "gbc" => {
-                let game_boy = match self.settings.game_boy_settings.sgb {
-                    true => SuperShuckieEmulatorType::GameBoySGB2,
-                    false => SuperShuckieEmulatorType::GameBoy
-                };
-
-                match self.settings.game_boy_settings.gbc_mode {
-                    GameBoyMode::AlwaysGBC => SuperShuckieEmulatorType::GameBoyColor,
-                    GameBoyMode::AlwaysGB => game_boy,
-                    GameBoyMode::GBInGBMode => {
-                        if data.get(0x143).copied() == Some(0x00) {
-                            game_boy
-                        }
-                        else {
-                            SuperShuckieEmulatorType::GameBoyColor
-                        }
-                    },
-                }
-            },
+            "gb" | "gbc" => self.choose_for_game_boy(data.as_slice()),
             unknown => return Err(format!("Unknown or unsupported ROM file type .{unknown}").into())
         };
 
@@ -881,7 +862,7 @@ impl SuperShuckieFrontend {
         let current_rom_name = self.get_current_rom_name_arc().expect("no rom name when game is running in start_recording_replay");
         let save_states_dir = self.get_replays_dir_for_rom(current_rom_name.as_str());
 
-        let (final_file, final_replay, _) = self.load_file_or_make_generic(&save_states_dir, name, None, REPLAY_EXTENSION)?;
+        let (final_file, final_replay, final_replay_path) = self.load_file_or_make_generic(&save_states_dir, name, None, REPLAY_EXTENSION)?;
         let (temp_file, _, temp_replay) = self.load_file_or_make_generic(&save_states_dir, name, Some("temp"), REPLAY_EXTENSION)?;
 
         if self.settings.replay_settings.auto_pause_on_record {
@@ -912,7 +893,8 @@ impl SuperShuckieFrontend {
 
         self.recording_replay_file = Some(ReplayFileInfo {
             final_replay_name: final_replay.clone().into(),
-            temp_replay_path: temp_replay
+            temp_replay_path: temp_replay,
+            final_replay_path
         });
 
         Ok(final_replay.into())
@@ -925,8 +907,14 @@ impl SuperShuckieFrontend {
         };
 
         // FIXME: We should make sure that it actually finalized here before deleting the temp file.
+        let zero_frames = self.core.get_elapsed_frames() == 0;
+
         self.core.stop_recording_replay();
         let _ = std::fs::remove_file(&replay_file.temp_replay_path);
+
+        if zero_frames {
+            let _ = std::fs::remove_file(&replay_file.final_replay_path);
+        }
     }
 
     /// Get all saves for the given ROM.
@@ -1110,6 +1098,9 @@ pub struct CoreMetadata {
 pub struct ReplayFileInfo {
     /// Name of the replay file being made
     pub final_replay_name: UTF8CString,
+
+    /// Path of the replay file being made
+    pub final_replay_path: PathBuf,
 
     /// Path to the temp file being recorded
     pub temp_replay_path: PathBuf
